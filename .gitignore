@@ -7,3 +7,4 @@ resources/admin
 release
 data/rustdeskapi.db
 *.exe
+resources/rustdesk-api-web
