@@ -31,22 +31,28 @@ type Admin struct {
 	IdServerPort    int    `mapstructure:"id-server-port"`
 	RelayServerPort int    `mapstructure:"relay-server-port"`
 }
+type ClientBuilder struct {
+	APIBase  string `mapstructure:"api-base"`
+	APIToken string `mapstructure:"api-token"`
+}
+
 type Config struct {
-	Lang       string `mapstructure:"lang"`
-	App        App
-	Admin      Admin
-	Gorm       Gorm
-	Mysql      Mysql
-	Postgresql Postgresql
-	Gin        Gin
-	Logger     Logger
-	Redis      Redis
-	Cache      Cache
-	Oss        Oss
-	Jwt        Jwt
-	Rustdesk   Rustdesk
-	Proxy      Proxy
-	Ldap       Ldap
+	Lang          string        `mapstructure:"lang"`
+	App           App
+	Admin         Admin
+	Gorm          Gorm
+	Mysql         Mysql
+	Postgresql    Postgresql
+	Gin           Gin
+	Logger        Logger
+	Redis         Redis
+	Cache         Cache
+	Oss           Oss
+	Jwt           Jwt
+	Rustdesk      Rustdesk
+	Proxy         Proxy
+	Ldap          Ldap
+	ClientBuilder ClientBuilder `mapstructure:"client-builder"`
 }
 
 func (a *Admin) Init() {

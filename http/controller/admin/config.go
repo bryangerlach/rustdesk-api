@@ -95,3 +95,40 @@ func (co *Config) AdminConfig(c *gin.Context) {
 		"hello": hello,
 	})
 }
+
+// ClientBuilder GET/UPDATE persisted client builder settings.
+// @Tags ADMIN
+// @Summary Client builder settings
+// @Router /admin/config/client_builder [get]
+func (co *Config) ClientBuilder(c *gin.Context) {
+	response.Success(c, &gin.H{
+		"api_base":  service.ClientBuilderBaseValue(),
+		"api_token": service.ClientBuilderTokenValue(),
+	})
+}
+
+// @Tags ADMIN
+// @Summary Update client builder settings
+// @Router /admin/config/client_builder [post]
+func (co *Config) ClientBuilderUpdate(c *gin.Context) {
+	f := &struct {
+		APIBase  string `json:"api_base"`
+		APIToken string `json:"api_token"`
+	}{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	svc := &service.SettingService{}
+	if f.APIBase != "" {
+		_ = svc.Set(service.SettingKeyClientBuilderAPIBase, f.APIBase)
+	} else {
+		_ = svc.Delete(service.SettingKeyClientBuilderAPIBase)
+	}
+	if f.APIToken != "" {
+		_ = svc.Set(service.SettingKeyClientBuilderAPIToken, f.APIToken)
+	} else {
+		_ = svc.Delete(service.SettingKeyClientBuilderAPIToken)
+	}
+	response.Success(c, nil)
+}

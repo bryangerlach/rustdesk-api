@@ -50,6 +50,7 @@ func Init(g *gin.Engine) {
 
 	RustdeskCmdBind(adg)
 	DeviceGroupBind(adg)
+	ClientBuildBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
 }
@@ -242,6 +243,11 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aR.GET("/server", rs.ServerConfig)
 	aR.GET("/app", rs.AppConfig)
 
+	// Client builder settings (admin only)
+	cbg := aR.Group("/client_builder").Use(middleware.AdminPrivilege())
+	cbg.GET("", rs.ClientBuilder)
+	cbg.POST("", rs.ClientBuilderUpdate)
+
 }
 
 /*
@@ -319,6 +325,19 @@ func ShareRecordBind(rg *gin.RouterGroup) {
 		aR.GET("/list", cont.List)
 		aR.POST("/delete", cont.Delete)
 		aR.POST("/batchDelete", cont.BatchDelete)
+	}
+
+}
+func ClientBuildBind(rg *gin.RouterGroup) {
+	aR := rg.Group("/client_build").Use(middleware.AdminPrivilege())
+	{
+		cont := &admin.ClientBuild{}
+		aR.GET("/list", cont.List)
+		aR.POST("/create", cont.Create)
+		aR.POST("/refresh_status", cont.RefreshStatus)
+		aR.POST("/delete", cont.Delete)
+		aR.POST("/batchDelete", cont.BatchDelete)
+		aR.GET("/download/:id/:file", cont.Download)
 	}
 
 }
