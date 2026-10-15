@@ -36,6 +36,11 @@ type ClientBuilder struct {
 	APIToken string `mapstructure:"api-token"`
 }
 
+type Rdgen struct {
+	APIBase  string `mapstructure:"api-base"`
+	APIToken string `mapstructure:"api-token"`
+}
+
 type Config struct {
 	Lang          string        `mapstructure:"lang"`
 	App           App
@@ -53,6 +58,7 @@ type Config struct {
 	Proxy         Proxy
 	Ldap          Ldap
 	ClientBuilder ClientBuilder `mapstructure:"client-builder"`
+	Rdgen         Rdgen         `mapstructure:"rdgen"`
 }
 
 func (a *Admin) Init() {

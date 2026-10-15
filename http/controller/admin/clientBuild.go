@@ -46,8 +46,9 @@ func (ct *ClientBuild) List(c *gin.Context) {
 // @Router /admin/client_build/create [post]
 func (ct *ClientBuild) Create(c *gin.Context) {
 	target := c.PostForm("target")
+	builder := c.PostForm("builder")
 	name := c.PostForm("name")
-	if target == "" {
+	if builder != "rdgen" && target == "" {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
 		return
 	}
@@ -70,7 +71,11 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 	if name == "" {
 		name = file.Filename
 	}
+	if builder == "" {
+		builder = "dvforge"
+	}
 	cb := &model.ClientBuild{
+		Builder:  builder,
 		Target:   target,
 		Name:     name,
 		Status:   "pending",

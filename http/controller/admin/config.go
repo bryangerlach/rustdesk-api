@@ -102,8 +102,10 @@ func (co *Config) AdminConfig(c *gin.Context) {
 // @Router /admin/config/client_builder [get]
 func (co *Config) ClientBuilder(c *gin.Context) {
 	response.Success(c, &gin.H{
-		"api_base":  service.ClientBuilderBaseValue(),
-		"api_token": service.ClientBuilderTokenValue(),
+		"api_base":           service.ClientBuilderBaseValue(),
+		"api_token":          service.ClientBuilderTokenValue(),
+		"rdgen_api_base":     service.RdgenBaseValue(),
+		"rdgen_api_token":     service.RdgenTokenValue(),
 	})
 }
 
@@ -112,8 +114,10 @@ func (co *Config) ClientBuilder(c *gin.Context) {
 // @Router /admin/config/client_builder [post]
 func (co *Config) ClientBuilderUpdate(c *gin.Context) {
 	f := &struct {
-		APIBase  string `json:"api_base"`
-		APIToken string `json:"api_token"`
+		APIBase       string `json:"api_base"`
+		APIToken      string `json:"api_token"`
+		RdgenAPIBase  string `json:"rdgen_api_base"`
+		RdgenAPIToken string `json:"rdgen_api_token"`
 	}{}
 	if err := c.ShouldBindJSON(f); err != nil {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
@@ -129,6 +133,16 @@ func (co *Config) ClientBuilderUpdate(c *gin.Context) {
 		_ = svc.Set(service.SettingKeyClientBuilderAPIToken, f.APIToken)
 	} else {
 		_ = svc.Delete(service.SettingKeyClientBuilderAPIToken)
+	}
+	if f.RdgenAPIBase != "" {
+		_ = svc.Set(service.SettingKeyRdgenAPIBase, f.RdgenAPIBase)
+	} else {
+		_ = svc.Delete(service.SettingKeyRdgenAPIBase)
+	}
+	if f.RdgenAPIToken != "" {
+		_ = svc.Set(service.SettingKeyRdgenAPIToken, f.RdgenAPIToken)
+	} else {
+		_ = svc.Delete(service.SettingKeyRdgenAPIToken)
 	}
 	response.Success(c, nil)
 }

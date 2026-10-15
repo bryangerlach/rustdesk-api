@@ -46,7 +46,8 @@ ARG FRONTEND_GIT_REPO=https://github.com/lejianwen/rustdesk-api-web.git
 ARG FRONTEND_GIT_BRANCH=master
 # Clone the frontend repository
 
-RUN git clone -b $FRONTEND_GIT_BRANCH $FRONTEND_GIT_REPO .
+# Use the frontend source bundled in this repository (includes local changes)
+COPY resources/rustdesk-api-web /frontend
 
 # Install required tools without caching index to minimize image size
 RUN if [ "$COUNTRY" = "CN" ] ; then \

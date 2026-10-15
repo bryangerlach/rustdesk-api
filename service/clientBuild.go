@@ -20,12 +20,15 @@ import (
 const (
 	DefaultClientBuilderAPIBase = ""
 	DefaultClientBuilderAPIToken  = ""
+	DefaultRdgenAPIBase          = ""
 	ClientBuilderStatusDone      = "done"
 )
 
 const (
 	SettingKeyClientBuilderAPIBase  = "client_builder_api_base"
 	SettingKeyClientBuilderAPIToken = "client_builder_api_token"
+	SettingKeyRdgenAPIBase         = "rdgen_api_base"
+	SettingKeyRdgenAPIToken        = "rdgen_api_token"
 )
 
 // Deprecated: use clientBuilderAPIBase() instead.
@@ -58,6 +61,32 @@ func clientBuilderAPIToken() string {
 		return Config.ClientBuilder.APIToken
 	}
 	return DefaultClientBuilderAPIToken
+}
+
+// RdgenBaseValue returns effective rdgen API base (saved setting, config/env, default).
+func RdgenBaseValue() string { return rdgenAPIBase() }
+
+// RdgenTokenValue returns effective rdgen API token (saved setting, config/env, default).
+func RdgenTokenValue() string { return rdgenAPIToken() }
+
+func rdgenAPIBase() string {
+	if v := (&SettingService{}).Get(SettingKeyRdgenAPIBase); v != "" {
+		return v
+	}
+	if Config != nil && Config.Rdgen.APIBase != "" {
+		return Config.Rdgen.APIBase
+	}
+	return DefaultRdgenAPIBase
+}
+
+func rdgenAPIToken() string {
+	if v := (&SettingService{}).Get(SettingKeyRdgenAPIToken); v != "" {
+		return v
+	}
+	if Config != nil && Config.Rdgen.APIToken != "" {
+		return Config.Rdgen.APIToken
+	}
+	return ""
 }
 
 type ClientBuildService struct{}
@@ -126,7 +155,7 @@ func (s *ClientBuildService) BatchDelete(ids []uint) error {
 }
 
 // StartBuild calls external api to start a build, returns remote job id.
-func (s *ClientBuildService) StartBuild(cb *model.ClientBuild, jsonData []byte) error {
+func (s *ClientBuildService) startDVForgeBuild(cb *model.ClientBuild, jsonData []byte) error {
 	target := cb.Target
 	if target == "" {
 		return fmt.Errorf("target required")
@@ -172,8 +201,152 @@ func (s *ClientBuildService) StartBuild(cb *model.ClientBuild, jsonData []byte) 
 	return s.Update(cb)
 }
 
+func (s *ClientBuildService) startRdgenBuild(cb *model.ClientBuild, jsonData []byte) error {
+	base := rdgenAPIBase()
+	platform := "windows"
+	if cb.Target != "" {
+		parts := strings.SplitN(cb.Target, "-", 2)
+		if parts[0] != "" {
+			platform = parts[0]
+		}
+	}
+	endpoint := base + "/api/generate?platform_override=" + url.QueryEscape(platform)
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok := rdgenAPIToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("start build failed: %s", strings.TrimSpace(string(body)))
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return err
+	}
+	ok, _ := result["success"].(bool)
+	if !ok {
+		if msg, _ := result["error"].(string); msg != "" {
+			return fmt.Errorf("start build failed: %s", msg)
+		}
+		return fmt.Errorf("start build failed: %s", strings.TrimSpace(string(body)))
+	}
+	id, _ := result["uuid"].(string)
+	if id == "" {
+		return fmt.Errorf("no job id returned")
+	}
+	cb.Builder = "rdgen"
+	cb.JobId = id
+	remotePlatform, _ := result["platform"].(string)
+	filename, _ := result["filename"].(string)
+	if remotePlatform != "" {
+		platform = remotePlatform
+	}
+	if filename != "" {
+		cb.StatusUrl = "/api/status?uuid=" + url.QueryEscape(id) + "&platform=" + url.QueryEscape(platform) + "&filename=" + url.QueryEscape(filename)
+	}
+	cb.Status = "running"
+	return s.Update(cb)
+}
+
+func (s *ClientBuildService) builderOf(cb *model.ClientBuild) string {
+	if cb.Builder == "" {
+		return "dvforge"
+	}
+	return cb.Builder
+}
+
+// StartBuild calls external api to start a build, returns remote job id.
+func (s *ClientBuildService) StartBuild(cb *model.ClientBuild, jsonData []byte) error {
+	if cb.Builder == "" {
+		cb.Builder = "dvforge"
+	}
+	if cb.Builder == "rdgen" {
+		return s.startRdgenBuild(cb, jsonData)
+	}
+	return s.startDVForgeBuild(cb, jsonData)
+}
+
 // RefreshStatus polls external job status and downloads files when done.
 func (s *ClientBuildService) RefreshStatus(cb *model.ClientBuild) error {
+	if cb.JobId == "" {
+		return nil
+	}
+	cb = s.InfoById(cb.Id)
+	if cb.Id == 0 {
+		return fmt.Errorf("not found")
+	}
+	if cb.Builder == "rdgen" {
+		return s.refreshRdgenStatus(cb)
+	}
+	return s.refreshDVForgeStatus(cb)
+}
+
+func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
+	base := rdgenAPIBase()
+	statusUrl := cb.StatusUrl
+	if statusUrl == "" {
+		statusUrl = "/api/status?uuid=" + url.QueryEscape(cb.JobId) + "&platform=windows&filename="
+	}
+	resp, err := http.Get(base + statusUrl)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		cb.Status = "error"
+		cb.Error = strings.TrimSpace(string(body))
+		return s.Update(cb)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return err
+	}
+	status, _ := result["status"].(string)
+	switch status {
+	case "success", "completed":
+		cb.Status = "done"
+	case "failure", "failed", "error", "cancelled", "timed_out":
+		cb.Status = "error"
+	default:
+		cb.Status = "running"
+	}
+	if filesRaw, ok := result["files"]; ok {
+		files := []string{}
+		switch v := filesRaw.(type) {
+		case []interface{}:
+			for _, f := range v {
+				files = append(files, fmt.Sprintf("%v", f))
+			}
+		}
+		if len(files) > 0 {
+			cb.Status = "done"
+			cb.FileList = files
+			cb.EncodeFiles()
+			if err := s.DownloadFiles(cb, files, "rdgen"); err != nil {
+				cb.Error = err.Error()
+			}
+		}
+	}
+	return s.Update(cb)
+}
+
+func (s *ClientBuildService) refreshDVForgeStatus(cb *model.ClientBuild) error {
 	if cb.JobId == "" {
 		return nil
 	}
@@ -222,24 +395,36 @@ func (s *ClientBuildService) RefreshStatus(cb *model.ClientBuild) error {
 		cb.FileList = files
 		cb.EncodeFiles()
 		// download files
-		if err := s.DownloadFiles(cb, files); err != nil {
+		if err := s.DownloadFiles(cb, files, "dvforge"); err != nil {
 			cb.Error = err.Error()
 		}
 	}
 	return s.Update(cb)
 }
 
-func (s *ClientBuildService) DownloadFiles(cb *model.ClientBuild, files []string) error {
+func (s *ClientBuildService) DownloadFiles(cb *model.ClientBuild, files []string, provider ...string) error {
 	dir := clientBuildDir(cb)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
+	}
+	prov := cb.Builder
+	if len(provider) > 0 && provider[0] != "" {
+		prov = provider[0]
+	}
+	if prov == "" {
+		prov = "dvforge"
 	}
 	for _, f := range files {
 		dest := filepath.Join(dir, f)
 		if _, err := os.Stat(dest); err == nil {
 			continue
 		}
-		url := fmt.Sprintf("%s/dl/%s/%s", clientBuilderAPIBase(), cb.JobId, httpPathEscape(f))
+		var url string
+		if prov == "rdgen" {
+			url = fmt.Sprintf("%s/download?uuid=%s&filename=%s", rdgenAPIBase(), cb.JobId, httpQueryEscape(f))
+		} else {
+			url = fmt.Sprintf("%s/dl/%s/%s", clientBuilderAPIBase(), cb.JobId, httpPathEscape(f))
+		}
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
 			return err

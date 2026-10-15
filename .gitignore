@@ -8,3 +8,4 @@ release
 data/rustdeskapi.db
 *.exe
 resources/rustdesk-api-web
+resources/public/upload

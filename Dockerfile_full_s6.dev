@@ -1,0 +1,75 @@
+# Use build arguments for Go version and architecture
+ARG GO_VERSION=1.23
+ARG BUILDARCH=amd64
+
+# Stage 1: Build the Go backend + bundled frontend source is handled below
+FROM crazymax/xgo:${GO_VERSION} AS builder-backend
+WORKDIR /app
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod tidy && go mod download && go install github.com/swaggo/swag/cmd/swag@latest
+RUN --mount=type=cache,target=/go/pkg/mod \
+    swag init -g cmd/apimain.go --output docs/api --instanceName api --exclude http/controller/admin && \
+    swag init -g cmd/apimain.go --output docs/admin --instanceName admin --exclude http/controller/api
+RUN --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=1 GOOS=linux go build -a \
+    -ldflags "-s -w --extldflags '-static -fpic'" \
+    -installsuffix cgo -o release/apimain cmd/apimain.go
+
+# Stage 2: Build the admin frontend from the bundled source
+FROM node:18-alpine AS builder-admin-frontend
+WORKDIR /frontend
+# install git in case dependencies need it
+RUN apk add --no-cache git
+# Use the frontend source bundled in this repository (includes local changes)
+COPY resources/rustdesk-api-web /frontend
+RUN npm install && npm run build
+
+# Stage 3: RustDesk server (s6 overlay + hbbs/hbbr)
+FROM rustdesk/rustdesk-server-s6:latest AS server
+
+# Stage 4: Final image
+FROM alpine:latest
+
+ARG BUILDARCH
+WORKDIR /app
+RUN apk add --no-cache tzdata
+
+# Copy the built application and resources from the builder stage
+COPY --from=builder-backend /app/release /app/
+COPY --from=builder-backend /app/conf /app/conf/
+COPY --from=builder-backend /app/resources /app/resources/
+COPY --from=builder-backend /app/docs /app/docs/
+# Copy frontend build on top of resources/admin
+COPY --from=builder-admin-frontend /frontend/dist/ /app/resources/admin/
+
+# Copy RustDesk server s6 components
+COPY --from=server /init /init
+COPY --from=server /etc/s6-overlay /etc/s6-overlay
+COPY --from=server /package /package
+COPY --from=server /usr/bin/healthcheck.sh /usr/bin/healthcheck.sh
+COPY --from=server /usr/bin/hbbr /usr/bin/hbbr
+COPY --from=server /usr/bin/hbbs /usr/bin/hbbs
+COPY --from=server /usr/bin/rustdesk-utils /usr/bin/rustdesk-utils
+COPY --from=server /command /command
+
+RUN \
+  mkdir -p /etc/s6-overlay/s6-rc.d/api && \
+  echo -e "key-secret\nhbbs" > /etc/s6-overlay/s6-rc.d/api/dependencies && \
+  echo "longrun" > /etc/s6-overlay/s6-rc.d/api/type && \
+  echo "#!/command/with-contenv sh" > /etc/s6-overlay/s6-rc.d/api/run && \
+  echo "cd /app" >> /etc/s6-overlay/s6-rc.d/api/run && \
+  echo "./apimain" >> /etc/s6-overlay/s6-rc.d/api/run && \
+  touch /etc/s6-overlay/s6-rc.d/user/contents.d/api && \
+  echo "/package/admin/s6/command/s6-svstat /run/s6-rc/servicedirs/api || exit 1" >> /usr/bin/healthcheck.sh && \
+  ln -s /run /var/run && \
+  file /app/apimain && \
+  mkdir -p /app/data && \
+  mkdir -p /app/runtime
+
+VOLUME /data
+VOLUME /app/data
+
+EXPOSE 21114 21115 21116 21116/udp 21117 21118 21119
+
+ENTRYPOINT ["/init"]

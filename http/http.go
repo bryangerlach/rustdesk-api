@@ -5,6 +5,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/middleware"
 	"github.com/lejianwen/rustdesk-api/v2/http/router"
+	"github.com/lejianwen/rustdesk-api/v2/service"
 	"github.com/sirupsen/logrus"
 	"net/http"
 	"strings"
@@ -37,5 +38,6 @@ func ApiInit() {
 	router.WebInit(g)
 	router.Init(g)
 	router.ApiInit(g)
+	go service.StartClientBuildPoller()
 	Run(g, global.Config.Gin.ApiAddr)
 }

@@ -85,4 +85,8 @@ ldap:
 
 client-builder:
   api-base: ""
+  api-token: ""
+
+rdgen:
+  api-base: ""
   api-token: "" 
