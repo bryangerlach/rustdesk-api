@@ -33,7 +33,7 @@ FROM alpine:latest
 
 ARG BUILDARCH
 WORKDIR /app
-RUN apk add --no-cache tzdata
+RUN apk add --no-cache tzdata file
 
 # Copy the built application and resources from the builder stage
 COPY --from=builder-backend /app/release /app/
