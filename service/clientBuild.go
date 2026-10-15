@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/model"
@@ -88,6 +89,8 @@ func rdgenAPIToken() string {
 	}
 	return ""
 }
+
+var buildHTTPClient = &http.Client{Timeout: 2 * time.Minute}
 
 type ClientBuildService struct{}
 
@@ -175,7 +178,7 @@ func (s *ClientBuildService) startDVForgeBuild(cb *model.ClientBuild, jsonData [
 	}
 	req.Header.Set("Authorization", "Bearer "+clientBuilderAPIToken())
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := buildHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -230,7 +233,7 @@ func (s *ClientBuildService) startRdgenBuild(cb *model.ClientBuild, jsonData []b
 	if tok := rdgenAPIToken(); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := buildHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -310,7 +313,7 @@ func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
 	if statusUrl == "" {
 		statusUrl = "/api/status?uuid=" + url.QueryEscape(cb.JobId) + "&platform=windows&filename="
 	}
-	resp, err := http.Get(base + statusUrl)
+	resp, err := buildHTTPClient.Get(base + statusUrl)
 	if err != nil {
 		return err
 	}
@@ -370,7 +373,7 @@ func (s *ClientBuildService) refreshDVForgeStatus(cb *model.ClientBuild) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := buildHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -440,7 +443,7 @@ func (s *ClientBuildService) DownloadFiles(cb *model.ClientBuild, files []string
 		if err != nil {
 			return err
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := buildHTTPClient.Do(req)
 		if err != nil {
 			return err
 		}
