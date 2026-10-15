@@ -47,6 +47,7 @@ func (ct *ClientBuild) List(c *gin.Context) {
 func (ct *ClientBuild) Create(c *gin.Context) {
 	target := c.PostForm("target")
 	builder := c.PostForm("builder")
+	version := c.PostForm("version")
 	name := c.PostForm("name")
 	if builder != "rdgen" && target == "" {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
@@ -77,6 +78,7 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 	cb := &model.ClientBuild{
 		Builder:  builder,
 		Target:   target,
+		Version:  version,
 		Name:     name,
 		Status:   "pending",
 		JsonFile: file.Filename,

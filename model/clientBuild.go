@@ -9,6 +9,7 @@ type ClientBuild struct {
 	Builder    string `json:"builder" gorm:"default:dvforge"`
 	Name       string `json:"name"`
 	Target     string `json:"target"`
+	Version    string `json:"version"`
 	JobId      string `json:"job_id"`
 	StatusUrl  string `json:"status_url"`
 	Status     string `json:"status"`

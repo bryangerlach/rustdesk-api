@@ -160,7 +160,15 @@ func (s *ClientBuildService) startDVForgeBuild(cb *model.ClientBuild, jsonData [
 	if target == "" {
 		return fmt.Errorf("target required")
 	}
-	url := fmt.Sprintf("%s/job?targets=%s", clientBuilderAPIBase(), httpQueryEscape(target))
+	version := ""
+	if cb.Version != "" {
+		version = cb.Version
+	}
+	endpoint := clientBuilderAPIBase() + "/job?targets=" + httpQueryEscape(target)
+	if version != "" {
+		endpoint += "&version=" + httpQueryEscape(version)
+	}
+	url := endpoint
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonData))
 	if err != nil {
 		return err
@@ -211,6 +219,9 @@ func (s *ClientBuildService) startRdgenBuild(cb *model.ClientBuild, jsonData []b
 		}
 	}
 	endpoint := base + "/api/generate?platform_override=" + url.QueryEscape(platform)
+	if cb.Version != "" {
+		endpoint += "&version=" + url.QueryEscape(cb.Version)
+	}
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(jsonData))
 	if err != nil {
 		return err
