@@ -332,15 +332,17 @@ func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
 		return err
 	}
 	status, _ := result["status"].(string)
-	// Only treat rdgen status as terminal once we actually have files to show.
-	// rdgen may report "success" before every architecture's file has landed,
-	// so keep polling as "running" until files appear.
-	cb.Status = "running"
 	switch status {
-	case "failure", "failed", "error", "cancelled", "timed_out":
+	case "completed":
+		cb.Status = "done"
+	case "in_progress":
+		cb.Status = "running"
+	default: // failure, failed, error, cancelled, timed_out
 		cb.Status = "error"
 	}
 
+	// Always capture whatever files rdgen reports, regardless of status,
+	// so partial results (e.g. android armv7/aarch64/x86_64) are available.
 	if filesRaw, ok := result["files"]; ok {
 		files := []string{}
 		switch v := filesRaw.(type) {
@@ -350,7 +352,6 @@ func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
 			}
 		}
 		if len(files) > 0 {
-			cb.Status = "done"
 			cb.FileList = files
 			cb.EncodeFiles()
 			if err := s.DownloadFiles(cb, files, "rdgen"); err != nil {
