@@ -333,7 +333,7 @@ func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
 	}
 	status, _ := result["status"].(string)
 	switch status {
-	case "completed":
+	case "completed", "success":
 		cb.Status = "done"
 	case "in_progress":
 		cb.Status = "running"
