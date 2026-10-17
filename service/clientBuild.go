@@ -332,14 +332,15 @@ func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
 		return err
 	}
 	status, _ := result["status"].(string)
+	// Only treat rdgen status as terminal once we actually have files to show.
+	// rdgen may report "success" before every architecture's file has landed,
+	// so keep polling as "running" until files appear.
+	cb.Status = "running"
 	switch status {
-	case "success", "completed":
-		cb.Status = "done"
 	case "failure", "failed", "error", "cancelled", "timed_out":
 		cb.Status = "error"
-	default:
-		cb.Status = "running"
 	}
+
 	if filesRaw, ok := result["files"]; ok {
 		files := []string{}
 		switch v := filesRaw.(type) {
