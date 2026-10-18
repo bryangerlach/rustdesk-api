@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -41,19 +43,23 @@ func (ct *ClientBuild) List(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// Create 创建并启动构建
+// Create 创建并启动构建，支持一次创建多个target
 // @Tags 客户端构建
-// @Summary 创建客户端构建
+// @Summary 创建客户端构建（支持多target）
 // @Router /admin/client_build/create [post]
 func (ct *ClientBuild) Create(c *gin.Context) {
-	target := c.PostForm("target")
+	targets := c.PostFormArray("targets")
 	builder := c.PostForm("builder")
 	version := c.PostForm("version")
 	name := c.PostForm("name")
-	if builder != "rdgen" && target == "" {
+	if builder == "" {
+		builder = "dvforge"
+	}
+	if len(targets) == 0 {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
 		return
 	}
+
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
@@ -73,9 +79,6 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 	if name == "" {
 		name = file.Filename
 	}
-	if builder == "" {
-		builder = "dvforge"
-	}
 
 	// Embed the update signing public key into the uploaded builder JSON so the
 	// built client can verify update metadata.
@@ -85,29 +88,93 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 		}
 	}
 
-	cb := &model.ClientBuild{
-		Builder:  builder,
-		Target:   target,
-		Version:  version,
-		Name:     name,
-		Status:   "pending",
-		JsonFile: file.Filename,
-		Files:    "[]",
-		FileList: []string{},
+	// 为每个target创建独立的构建记录并启动构建
+	var createdBuilds []*model.ClientBuild
+	var firstErr error
+	for _, target := range targets {
+		cb := &model.ClientBuild{
+			Builder:  builder,
+			Target:   target,
+			Version:  version,
+			Name:     name + " - " + target,
+			Status:   "pending",
+			JsonFile: file.Filename,
+			Files:    "[]",
+			FileList: []string{},
+		}
+		if err := cbSvc().Create(cb); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		// 为 rdgen 构建注入 app_version: <version>.<id padded to 3 digits>
+		buildData := data
+		if builder == "rdgen" {
+			var jsonMap map[string]interface{}
+			if jsonErr := json.Unmarshal(buildData, &jsonMap); jsonErr == nil {
+				jsonMap["app_version"] = version + "." + fmt.Sprintf("%03d", cb.Id)
+				if modified, mErr := json.Marshal(jsonMap); mErr == nil {
+					buildData = modified
+				}
+			}
+		}
+
+		if err := cbSvc().StartBuild(cb, buildData); err != nil {
+			cb.Status = "error"
+			cb.Error = err.Error()
+			_ = cbSvc().Update(cb)
+			if firstErr == nil {
+				firstErr = err
+			}
+			createdBuilds = append(createdBuilds, cb)
+			continue
+		}
+		cb = cbSvc().InfoById(cb.Id)
+		createdBuilds = append(createdBuilds, cb)
 	}
-	if err := cbSvc().Create(cb); err != nil {
-		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+
+	if firstErr != nil && len(createdBuilds) == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+firstErr.Error())
 		return
 	}
-	if err := cbSvc().StartBuild(cb, data); err != nil {
-		cb.Status = "error"
-		cb.Error = err.Error()
-		_ = cbSvc().Update(cb)
-		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
-		return
+	response.Success(c, createdBuilds)
+}
+
+// TargetOptions 根据builder返回可用的target选项
+// @Tags 客户端构建
+// @Summary 获取构建目标选项
+// @Router /admin/client_build/target_options [get]
+func (ct *ClientBuild) TargetOptions(c *gin.Context) {
+	builder := c.Query("builder")
+	if builder == "" {
+		builder = "dvforge"
 	}
-	cb = cbSvc().InfoById(cb.Id)
-	response.Success(c, cb)
+
+	var targets []string
+	switch builder {
+	case "rdgen":
+		// rdgen按OS构建所有架构，所以target是OS级别
+		targets = []string{"windows", "windows-x86", "linux", "android", "macos"}
+	case "dvforge":
+		// dvforge使用具体的target字符串
+		targets = []string{
+			"windows-386-exe",
+			"windows-amd64-exe",
+			"windows-arm64-exe",
+			"linux-x86_64-deb",
+			"linux-arm64-deb",
+			"macos-x86_64-dmg",
+			"macos-arm64-dmg",
+			"android-arm64-v8a",
+			"android-armeabi-v7a",
+			"android-x86_64",
+		}
+	default:
+		targets = []string{}
+	}
+
+	response.Success(c, gin.H{"targets": targets})
 }
 
 // RefreshStatus 刷新构建状态

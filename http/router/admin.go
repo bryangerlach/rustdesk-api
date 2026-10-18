@@ -333,6 +333,7 @@ func ClientBuildBind(rg *gin.RouterGroup) {
 	{
 		cont := &admin.ClientBuild{}
 		aR.GET("/list", cont.List)
+		aR.GET("/target_options", cont.TargetOptions)
 		aR.POST("/create", cont.Create)
 		aR.POST("/refresh_status", cont.RefreshStatus)
 		aR.POST("/delete", cont.Delete)
