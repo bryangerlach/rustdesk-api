@@ -48,6 +48,7 @@ rustdesk:
   api-server: "http://127.0.0.1:21114"
   key: ""
   key-file: "/data/id_ed25519.pub"
+  update-key-file: "/data/update_signing_key.pem"
   personal: 1
   webclient-magic-queryonline: 0
   ws-host: ""  #eg: wss://192.168.1.3:4443

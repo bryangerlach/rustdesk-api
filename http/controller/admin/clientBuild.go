@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
+	"github.com/lejianwen/rustdesk-api/v2/http/controller/api"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
@@ -75,6 +76,15 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 	if builder == "" {
 		builder = "dvforge"
 	}
+
+	// Embed the update signing public key into the uploaded builder JSON so the
+	// built client can verify update metadata.
+	if builder == "dvforge" || builder == "rdgen" {
+		if injected, injErr := api.InjectUpdatePublicKey(data); injErr == nil {
+			data = injected
+		}
+	}
+
 	cb := &model.ClientBuild{
 		Builder:  builder,
 		Target:   target,
@@ -160,7 +170,7 @@ func (ct *ClientBuild) BatchDelete(c *gin.Context) {
 		Ids []uint `json:"ids" validate:"required"`
 	}{}
 	if err := c.ShouldBindJSON(f); err != nil {
-		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
 		return
 	}
 	if len(f.Ids) == 0 {

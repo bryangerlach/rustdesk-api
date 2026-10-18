@@ -29,6 +29,9 @@ func ApiInit(g *gin.Engine) {
 		frg.GET("/version", i.Version)
 
 		frg.POST("/heartbeat", i.Heartbeat)
+
+		up := &api.Update{}
+		frg.POST("/version/latest", up.Latest)
 	}
 
 	{

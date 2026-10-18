@@ -17,6 +17,7 @@ type Rustdesk struct {
 	ApiServer       string `mapstructure:"api-server"`
 	Key             string `mapstructure:"key"`
 	KeyFile         string `mapstructure:"key-file"`
+	UpdateKeyFile   string `mapstructure:"update-key-file"`
 	Personal        int    `mapstructure:"personal"`
 	//webclient-magic-queryonline
 	WebclientMagicQueryonline int    `mapstructure:"webclient-magic-queryonline"`
