@@ -183,13 +183,15 @@ func (u *Update) Latest(c *gin.Context) {
 		return
 	}
 
+	cb.DecodeFiles()
+
 	if len(cb.FileList) == 0 {
 		response.Fail(c, 101, "No files available")
 		return
 	}
 
 	idStr := strconv.Itoa(int(cb.Id))
-	file := cb.FileList[0]
+	file := selectUpdateFile(cb.FileList, req.Os, req.Arch)
 	downloadURL := global.Config.Rustdesk.ApiServer + "/upload/client_build/" + idStr + "/" + file
 
 	// Compute size and sha256 of the artifact.
@@ -266,6 +268,55 @@ func mapTarget(os, arch string) string {
 		return "android-" + arch
 	}
 	return ""
+}
+
+// archPatterns returns filename substrings that match the client's reported arch.
+// rdgen builds multiple arch variants for a single OS target, so we need to
+// match the actual file to the client's architecture.
+func archPatterns(arch string) []string {
+	switch arch {
+	case "amd64", "x86_64":
+		return []string{"x86_64", "amd64"}
+	case "arm64", "aarch64":
+		return []string{"aarch64", "arm64"}
+	case "armv7", "armhf":
+		return []string{"armv7", "armhf"}
+	case "386", "i386":
+		return []string{"i386", "386", "x86"}
+	default:
+		return []string{arch}
+	}
+}
+
+// selectUpdateFile picks the file from FileList that best matches the client's
+// requested os/arch. rdgen builds all arch variants for an OS target, so
+// FileList[0] may be aarch64 when the client asked for x86_64 (or vice versa).
+// Windows files don't include arch in the name, so .exe is preferred over .msi.
+func selectUpdateFile(files []string, os, arch string) string {
+	if len(files) == 0 {
+		return ""
+	}
+
+	// First pass: find a file containing the arch pattern
+	for _, pattern := range archPatterns(arch) {
+		for _, f := range files {
+			if strings.Contains(strings.ToLower(f), strings.ToLower(pattern)) {
+				return f
+			}
+		}
+	}
+
+	// For Windows, arch isn't in the filename; prefer .exe over .msi
+	if os == "windows" {
+		for _, f := range files {
+			if strings.HasSuffix(strings.ToLower(f), ".exe") {
+				return f
+			}
+		}
+	}
+
+	// Fallback to first file
+	return files[0]
 }
 
 // InjectUpdatePublicKey adds the update signing public key to a client builder
