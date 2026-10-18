@@ -352,6 +352,7 @@ func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
 			}
 		}
 		if len(files) > 0 {
+			if cb.Status == "error" {cb.Status = "done"}
 			cb.FileList = files
 			cb.EncodeFiles()
 			if err := s.DownloadFiles(cb, files, "rdgen"); err != nil {
