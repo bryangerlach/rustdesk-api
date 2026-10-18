@@ -7,6 +7,7 @@ Generate an ed25519 keypair for signing rustdesk-update.json metadata.
 Usage:
     python scripts/gen_update_key.py --out update_signing_key.pem
 
+
 The private key is written in PEM PKCS8 format. Use it with:
     RUSTDESK_API_RUSTDESK_UPDATE_KEY_FILE=/data/update_signing_key.pem
 
