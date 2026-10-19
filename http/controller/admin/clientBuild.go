@@ -108,12 +108,13 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 			}
 			continue
 		}
-		// 为 rdgen 构建注入 app_version: <version>.<id padded to 3 digits>
+		// 为 rdgen 构建注入 app_version: <version>+<id padded to 3 digits>
+		// semver build metadata format required by Cargo.toml (e.g. 1.5.0+016)
 		buildData := data
 		if builder == "rdgen" {
 			var jsonMap map[string]interface{}
 			if jsonErr := json.Unmarshal(buildData, &jsonMap); jsonErr == nil {
-				jsonMap["app_version"] = version + "." + fmt.Sprintf("%03d", cb.Id)
+				jsonMap["app_version"] = version + "+" + fmt.Sprintf("%03d", cb.Id)
 				if modified, mErr := json.Marshal(jsonMap); mErr == nil {
 					buildData = modified
 				}
