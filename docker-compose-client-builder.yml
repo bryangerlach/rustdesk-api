@@ -1,0 +1,35 @@
+networks:
+  rustdesk-net:
+    external: false
+  webnet:
+    external: true
+services:
+  rustdesk:
+    ports:
+      - 21114:21114
+      - 21115:21115
+      - 21116:21116
+      - 21116:21116/udp
+      - 21117:21117
+      - 21118:21118
+      - 21119:21119
+    image: ghcr.io/bryangerlach/rustdesk-api:full-s6-dev
+    environment:
+      - RELAY=rustdesk.example.com
+      - ENCRYPTED_ONLY=1
+      - MUST_LOGIN=N
+      - TZ=America/Chicago
+      - RUSTDESK_API_RUSTDESK_ID_SERVER=rustdesk.example.com                  #21116
+      - RUSTDESK_API_RUSTDESK_RELAY_SERVER=rustdesk.example.com               #21117
+      - RUSTDESK_API_RUSTDESK_API_SERVER=https://rustdesk.example.com         #21114
+      - RUSTDESK_API_KEY_FILE=/data/id_ed25519.pub                            #rustdesk key
+      - RUSTDESK_API_APP_TOKEN_EXPIRE=8760h             
+      #- RUSTDESK_API_RUSTDESK_UPDATE_KEY_FILE=/data/update_signing_key.pem    #optional rustdesk update key
+    volumes:
+      - /opt/rustdesk/server:/data
+      - /opt/rustdesk/api:/app/data
+      - /opt/rustdesk/resources/public/upload/client_build:/app/resources/public/upload/client_build
+    networks:
+      - rustdesk-net
+      - webnet
+    restart: unless-stopped

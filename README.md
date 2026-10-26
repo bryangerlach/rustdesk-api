@@ -1,3 +1,7 @@
+# Client Builder
+
+[rustdesk api server with integrated client builder](CLIENT_BUILDER.md)
+
 # RustDesk API
 
 [English Doc](README_EN.md)

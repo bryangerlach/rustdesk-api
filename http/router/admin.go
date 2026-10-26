@@ -145,6 +145,13 @@ func AddressBookBind(rg *gin.RouterGroup) {
 		arp.POST("/delete", cont.Delete)
 		arp.POST("/batchCreate", cont.BatchCreate)
 		arp.POST("/batchCreateFromPeers", cont.BatchCreateFromPeers)
+		arp.POST("/import_for_user", cont.ImportForUser)
+
+		// 普通用户导入 Kingmo 格式（导入到自己的user_id）
+		aR.POST("/import_kingmo", cont.ImportKingmo)
+
+		// 普通用户导入（导入到自己的user_id）
+		aR.POST("/import", cont.Import)
 
 	}
 }

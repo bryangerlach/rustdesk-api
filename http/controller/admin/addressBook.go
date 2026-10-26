@@ -3,13 +3,17 @@ package admin
 import (
 	"encoding/json"
 	_ "encoding/json"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"gorm.io/gorm"
-	"strconv"
 )
 
 type AddressBook struct {
@@ -359,4 +363,400 @@ func (ct *AddressBook) BatchCreateFromPeers(c *gin.Context) {
 		service.AllService.AddressBookService.Create(ab)
 	}
 	response.Success(c, nil)
+}
+
+// Import 批量导入地址簿
+// 支持文件上传(.json)或直接传JSON数组
+// 普通用户：导入到自己的user_id
+// 管理员：可指定user_id导入到指定用户
+// @Tags 地址簿
+// @Summary 批量导入地址簿
+// @Accept json
+// @Produce json
+// @Param file formFile false "JSON文件"
+// @Param data formData false "JSON数组字符串（不上传文件时使用）"
+// @Param user_id formData false "目标用户ID（仅管理员可用）"
+// @Success 200 {object} response.Response
+// @Router /admin/address_book/import [post]
+// @Security token
+func (ct *AddressBook) Import(c *gin.Context) {
+	// 获取当前用户
+	curUser := service.AllService.UserService.CurUser(c)
+	if curUser.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "NeedLogin"))
+		return
+	}
+
+	// 解析目标用户ID
+	targetUserId := curUser.Id
+	isAdmin := service.AllService.UserService.IsAdmin(curUser)
+
+	if uidStr := c.PostForm("user_id"); uidStr != "" {
+		if !isAdmin {
+			response.Fail(c, 101, response.TranslateMsg(c, "NoAccess"))
+			return
+		}
+		if uid, err := strconv.Atoi(uidStr); err == nil && uid > 0 {
+			targetUserId = uint(uid)
+		}
+	}
+
+	// 读取导入数据
+	var entries []admin.AddressBookForm
+
+	// 尝试文件上传
+	file, err := c.FormFile("file")
+	if err == nil {
+		f, openErr := file.Open()
+		if openErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+openErr.Error())
+			return
+		}
+		defer f.Close()
+		data, readErr := io.ReadAll(f)
+		if readErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+readErr.Error())
+			return
+		}
+		if jsonErr := json.Unmarshal(data, &entries); jsonErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+jsonErr.Error())
+			return
+		}
+	} else {
+		// 尝试直接传JSON字符串
+		dataStr := c.PostForm("data")
+		if dataStr == "" {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+			return
+		}
+		if jsonErr := json.Unmarshal([]byte(dataStr), &entries); jsonErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+jsonErr.Error())
+			return
+		}
+	}
+
+	if len(entries) == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
+
+	imported := 0
+	skipped := 0
+	errors := []string{}
+
+	for idx, entry := range entries {
+		entry.UserId = targetUserId
+		if entry.Id == "" {
+			errors = append(errors, fmt.Sprintf("第%d条: id不能为空", idx+1))
+			continue
+		}
+		if entry.CollectionId > 0 && !service.AllService.AddressBookService.CheckCollectionOwner(targetUserId, entry.CollectionId) {
+			errors = append(errors, fmt.Sprintf("第%d条(%s): 无权访问该分组", idx+1, entry.Id))
+			continue
+		}
+		// 检查重复
+		ex := service.AllService.AddressBookService.InfoByUserIdAndIdAndCid(targetUserId, entry.Id, entry.CollectionId)
+		if ex.RowId > 0 {
+			skipped++
+			continue
+		}
+		t := entry.ToAddressBook()
+		if err := service.AllService.AddressBookService.Create(t); err != nil {
+			errors = append(errors, fmt.Sprintf("第%d条(%s): %s", idx+1, entry.Id, err.Error()))
+			continue
+		}
+		imported++
+	}
+
+	result := gin.H{
+		"imported": imported,
+		"skipped":  skipped,
+		"total":    len(entries),
+		"user_id":  targetUserId,
+	}
+	if len(errors) > 0 {
+		result["errors"] = errors
+	}
+	response.Success(c, result)
+}
+
+// Kingmo import format structures
+type kingmoExport struct {
+	ExportedAt string     `json:"exported_at"`
+	UserCount  int        `json:"user_count"`
+	Users      []kingmoUser `json:"users"`
+}
+
+type kingmoUser struct {
+	UID        string       `json:"uid"`
+	PeerCount  int          `json:"peer_count"`
+	TagCount   int          `json:"tag_count"`
+	Peers      []kingmoPeer `json:"peers"`
+	Tags       []kingmoTag  `json:"tags"`
+}
+
+type kingmoPeer struct {
+	ID        string   `json:"id"`
+	Username  string   `json:"username"`
+	Hostname  string   `json:"hostname"`
+	Alias     string   `json:"alias"`
+	Platform  string   `json:"platform"`
+	Tags      []string `json:"tags"`
+	Hash      string   `json:"hash"`
+	IP        string   `json:"ip"`
+}
+
+type kingmoTag struct {
+	TagName  string `json:"tag_name"`
+	TagColor string `json:"tag_color"`
+}
+
+// ImportKingmo 导入 Kingmo/Infinite Remote 格式的地址簿
+// 格式：{ exported_at, user_count, users: [{ uid, peers: [...] }] }
+// 普通用户：导入到自己的user_id
+// 管理员：可指定user_id导入到指定用户
+// @Tags 地址簿
+// @Summary 导入 Kingmo/Infinite Remote 格式地址簿
+// @Accept json
+// @Produce json
+// @Param file formFile false "Kingmo JSON导出文件"
+// @Param data formData false "Kingmo JSON字符串（不上传文件时使用）"
+// @Param user_id formData false "目标用户ID（仅管理员可用）"
+// @Success 200 {object} response.Response
+// @Router /admin/address_book/import_kingmo [post]
+// @Security token
+func (ct *AddressBook) ImportKingmo(c *gin.Context) {
+	curUser := service.AllService.UserService.CurUser(c)
+	if curUser.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "NeedLogin"))
+		return
+	}
+
+	// 解析目标用户ID
+	targetUserId := curUser.Id
+	isAdmin := service.AllService.UserService.IsAdmin(curUser)
+
+	if uidStr := c.PostForm("user_id"); uidStr != "" {
+		if !isAdmin {
+			response.Fail(c, 101, response.TranslateMsg(c, "NoAccess"))
+			return
+		}
+		if uid, err := strconv.Atoi(uidStr); err == nil && uid > 0 {
+			targetUserId = uint(uid)
+		}
+	}
+
+	// 读取导入数据
+	var raw kingmoExport
+
+	file, err := c.FormFile("file")
+	if err == nil {
+		f, openErr := file.Open()
+		if openErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+openErr.Error())
+			return
+		}
+		defer f.Close()
+		data, readErr := io.ReadAll(f)
+		if readErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+readErr.Error())
+			return
+		}
+		if jsonErr := json.Unmarshal(data, &raw); jsonErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+jsonErr.Error())
+			return
+		}
+	} else {
+		dataStr := c.PostForm("data")
+		if dataStr == "" {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+			return
+		}
+		if jsonErr := json.Unmarshal([]byte(dataStr), &raw); jsonErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+jsonErr.Error())
+			return
+		}
+	}
+
+	if len(raw.Users) == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
+
+	// 展开所有用户的peers为扁平列表
+	type kingmoPeerWithUser struct {
+		peer      kingmoPeer
+		kingmoUID string
+	}
+	var allPeers []kingmoPeerWithUser
+	for _, ku := range raw.Users {
+		for _, kp := range ku.Peers {
+			allPeers = append(allPeers, kingmoPeerWithUser{peer: kp, kingmoUID: ku.UID})
+		}
+	}
+
+	if len(allPeers) == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
+
+	imported := 0
+	skipped := 0
+	errors := []string{}
+
+	for idx, kpw := range allPeers {
+		kp := kpw.peer
+		if kp.ID == "" {
+			errors = append(errors, fmt.Sprintf("第%d条: id不能为空", idx+1))
+			continue
+		}
+
+		entry := admin.AddressBookForm{
+			Id:               kp.ID,
+			Username:         kp.Username,
+			Hostname:         kp.Hostname,
+			Alias:            kp.Alias,
+			Platform:         strings.Title(strings.ToLower(kp.Platform)),
+			Tags:             kp.Tags,
+			Hash:             kp.Hash,
+			UserId:           targetUserId,
+			CollectionId:     0,
+		}
+
+		if entry.CollectionId > 0 && !service.AllService.AddressBookService.CheckCollectionOwner(targetUserId, entry.CollectionId) {
+			errors = append(errors, fmt.Sprintf("第%d条(%s): 无权访问该分组", idx+1, entry.Id))
+			continue
+		}
+		ex := service.AllService.AddressBookService.InfoByUserIdAndIdAndCid(targetUserId, entry.Id, entry.CollectionId)
+		if ex.RowId > 0 {
+			skipped++
+			continue
+		}
+		t := entry.ToAddressBook()
+		if err := service.AllService.AddressBookService.Create(t); err != nil {
+			errors = append(errors, fmt.Sprintf("第%d条(%s): %s", idx+1, entry.Id, err.Error()))
+			continue
+		}
+		imported++
+	}
+
+	result := gin.H{
+		"imported": imported,
+		"skipped":  skipped,
+		"total":    len(allPeers),
+		"user_id":  targetUserId,
+		"format":   "kingmo",
+	}
+	if len(errors) > 0 {
+		result["errors"] = errors
+	}
+	response.Success(c, result)
+}
+// @Tags 地址簿
+// @Summary 管理员为指定用户批量导入地址簿
+// @Accept json
+// @Produce json
+// @Param file formFile false "JSON文件"
+// @Param data formData false "JSON数组字符串（不上传文件时使用）"
+// @Param user_id formData true "目标用户ID"
+// @Success 200 {object} response.Response
+// @Router /admin/address_book/import_for_user [post]
+// @Security token
+func (ct *AddressBook) ImportForUser(c *gin.Context) {
+	curUser := service.AllService.UserService.CurUser(c)
+	if curUser.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "NeedLogin"))
+		return
+	}
+	if !service.AllService.UserService.IsAdmin(curUser) {
+		response.Fail(c, 101, response.TranslateMsg(c, "NoAccess"))
+		return
+	}
+
+	uidStr := c.PostForm("user_id")
+	if uidStr == "" {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
+	uid, err := strconv.Atoi(uidStr)
+	if err != nil || uid <= 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
+	targetUserId := uint(uid)
+
+	// 读取导入数据
+	var entries []admin.AddressBookForm
+
+	file, err := c.FormFile("file")
+	if err == nil {
+		f, openErr := file.Open()
+		if openErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+openErr.Error())
+			return
+		}
+		defer f.Close()
+		data, readErr := io.ReadAll(f)
+		if readErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+readErr.Error())
+			return
+		}
+		if jsonErr := json.Unmarshal(data, &entries); jsonErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+jsonErr.Error())
+			return
+		}
+	} else {
+		dataStr := c.PostForm("data")
+		if dataStr == "" {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+			return
+		}
+		if jsonErr := json.Unmarshal([]byte(dataStr), &entries); jsonErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+jsonErr.Error())
+			return
+		}
+	}
+
+	if len(entries) == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
+
+	imported := 0
+	skipped := 0
+	errors := []string{}
+
+	for idx, entry := range entries {
+		entry.UserId = targetUserId
+		if entry.Id == "" {
+			errors = append(errors, fmt.Sprintf("第%d条: id不能为空", idx+1))
+			continue
+		}
+		if entry.CollectionId > 0 && !service.AllService.AddressBookService.CheckCollectionOwner(targetUserId, entry.CollectionId) {
+			errors = append(errors, fmt.Sprintf("第%d条(%s): 无权访问该分组", idx+1, entry.Id))
+			continue
+		}
+		ex := service.AllService.AddressBookService.InfoByUserIdAndIdAndCid(targetUserId, entry.Id, entry.CollectionId)
+		if ex.RowId > 0 {
+			skipped++
+			continue
+		}
+		t := entry.ToAddressBook()
+		if err := service.AllService.AddressBookService.Create(t); err != nil {
+			errors = append(errors, fmt.Sprintf("第%d条(%s): %s", idx+1, entry.Id, err.Error()))
+			continue
+		}
+		imported++
+	}
+
+	result := gin.H{
+		"imported": imported,
+		"skipped":  skipped,
+		"total":    len(entries),
+		"user_id":  targetUserId,
+	}
+	if len(errors) > 0 {
+		result["errors"] = errors
+	}
+	response.Success(c, result)
 }
