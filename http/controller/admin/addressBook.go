@@ -373,9 +373,9 @@ func (ct *AddressBook) BatchCreateFromPeers(c *gin.Context) {
 // @Summary 批量导入地址簿
 // @Accept json
 // @Produce json
-// @Param file formFile false "JSON文件"
-// @Param data formData false "JSON数组字符串（不上传文件时使用）"
-// @Param user_id formData false "目标用户ID（仅管理员可用）"
+// @Param file formData file false "JSON文件"
+// @Param data formData string false "JSON数组字符串（不上传文件时使用）"
+// @Param user_id formData string false "目标用户ID（仅管理员可用）"
 // @Success 200 {object} response.Response
 // @Router /admin/address_book/import [post]
 // @Security token
@@ -519,9 +519,9 @@ type kingmoTag struct {
 // @Summary 导入 Kingmo/Infinite Remote 格式地址簿
 // @Accept json
 // @Produce json
-// @Param file formFile false "Kingmo JSON导出文件"
-// @Param data formData false "Kingmo JSON字符串（不上传文件时使用）"
-// @Param user_id formData false "目标用户ID（仅管理员可用）"
+// @Param file formData file false "Kingmo JSON导出文件"
+// @Param data formData string false "Kingmo JSON字符串（不上传文件时使用）"
+// @Param user_id formData string false "目标用户ID（仅管理员可用）"
 // @Success 200 {object} response.Response
 // @Router /admin/address_book/import_kingmo [post]
 // @Security token
@@ -656,9 +656,9 @@ func (ct *AddressBook) ImportKingmo(c *gin.Context) {
 // @Summary 管理员为指定用户批量导入地址簿
 // @Accept json
 // @Produce json
-// @Param file formFile false "JSON文件"
-// @Param data formData false "JSON数组字符串（不上传文件时使用）"
-// @Param user_id formData true "目标用户ID"
+// @Param file formData file false "JSON文件"
+// @Param data formData string false "JSON数组字符串（不上传文件时使用）"
+// @Param user_id formData string true "目标用户ID"
 // @Success 200 {object} response.Response
 // @Router /admin/address_book/import_for_user [post]
 // @Security token
