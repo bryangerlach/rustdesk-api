@@ -170,14 +170,14 @@ func (u *Update) Latest(c *gin.Context) {
 		return
 	}
 
-	target := mapTarget(req.Os, req.Arch)
-	if target == "" {
+	targets := candidateTargets(req.Os, req.Arch)
+	if len(targets) == 0 {
 		response.Fail(c, 101, "Unsupported platform")
 		return
 	}
 
 	cb := &model.ClientBuild{}
-	if err := global.DB.Where("status = ? AND target = ?", "done", target).
+	if err := global.DB.Where("status = ? AND target IN ?", "done", targets).
 		Order("created_at desc").First(cb).Error; err != nil {
 		response.Fail(c, 101, "No update available")
 		return
@@ -248,41 +248,69 @@ func (u *Update) Latest(c *gin.Context) {
 	})
 }
 
-// mapTarget converts the client-reported os/arch into a ClientBuild target value
-// that matches the dropdown options used by the client builder.
-func mapTarget(os, arch string) string {
+// candidateTargets returns possible ClientBuild target values for the given
+// client os/arch. It covers both dvforge specific targets (e.g.
+// "windows-x86_64-exe") and rdgen OS-level targets (e.g. "windows"), since
+// rdgen builds every architecture for an OS in a single build.
+func candidateTargets(os, arch string) []string {
+	os = strings.ToLower(os)
+	arch = strings.ToLower(arch)
 	switch os {
 	case "windows":
-		return "windows-" + arch + "-exe"
+		switch arch {
+		case "amd64", "x86_64":
+			return []string{"windows-x86_64-exe", "windows-amd64-exe", "windows"}
+		case "386", "i386", "x86":
+			return []string{"windows-386-exe", "windows-i386-exe", "windows-x86"}
+		default:
+			return []string{"windows-" + arch + "-exe", "windows"}
+		}
 	case "linux":
 		switch arch {
 		case "amd64", "x86_64":
-			return "linux-x86_64-deb"
+			return []string{"linux-x86_64-deb", "linux"}
+		case "arm64", "aarch64":
+			return []string{"linux-arm64-deb", "linux"}
+		case "armv7", "armhf", "arm":
+			return []string{"linux-armhf-deb", "linux"}
+		default:
+			return []string{"linux-" + arch + "-deb", "linux"}
 		}
 	case "macos":
-		if arch == "arm64" {
-			return "macos-arm64-dmg"
+		if arch == "arm64" || arch == "aarch64" {
+			return []string{"macos-arm64-dmg", "macos"}
 		}
-		return "macos-x86_64-dmg"
+		return []string{"macos-x86_64-dmg", "macos"}
 	case "android":
-		return "android-" + arch
+		switch arch {
+		case "arm64", "aarch64", "arm64-v8a":
+			return []string{"android-arm64-v8a", "android-arm64", "android"}
+		case "armv7", "armeabi-v7a", "arm":
+			return []string{"android-armeabi-v7a", "android-armeabi", "android-armv7", "android"}
+		case "x86_64", "amd64":
+			return []string{"android-x86_64", "android"}
+		case "x86", "386", "i386":
+			return []string{"android-x86", "android"}
+		default:
+			return []string{"android-" + arch, "android"}
+		}
 	}
-	return ""
+	return nil
 }
 
 // archPatterns returns filename substrings that match the client's reported arch.
 // rdgen builds multiple arch variants for a single OS target, so we need to
 // match the actual file to the client's architecture.
 func archPatterns(arch string) []string {
-	switch arch {
+	switch strings.ToLower(arch) {
 	case "amd64", "x86_64":
 		return []string{"x86_64", "amd64"}
-	case "arm64", "aarch64":
+	case "arm64", "aarch64", "arm64-v8a":
 		return []string{"aarch64", "arm64"}
-	case "armv7", "armhf":
+	case "armv7", "armhf", "armeabi-v7a", "arm":
 		return []string{"armv7", "armhf"}
-	case "386", "i386":
-		return []string{"i386", "386", "x86"}
+	case "386", "i386", "x86":
+		return []string{"i386", "-x86.", "-x86-"}
 	default:
 		return []string{arch}
 	}
@@ -296,6 +324,7 @@ func selectUpdateFile(files []string, os, arch string) string {
 	if len(files) == 0 {
 		return ""
 	}
+	os = strings.ToLower(os)
 
 	// First pass: find a file containing the arch pattern
 	for _, pattern := range archPatterns(arch) {
