@@ -28,12 +28,40 @@ import (
 // VersionCheckRequest mirrors the RustDesk client's update check body.
 // POST /version/latest
 type VersionCheckRequest struct {
-	Os        string `json:"os"`
-	OsVersion string `json:"os_version"`
-	Arch      string `json:"arch"`
-	DeviceId  string `json:"device_id"`
-	Type      string `json:"typ"`
+	Os        string     `json:"os"`
+	OsVersion string     `json:"os_version"`
+	Arch      string     `json:"arch"`
+	DeviceId  flexString `json:"device_id"`
+	Type      string     `json:"typ"`
 }
+
+// flexString accepts either a JSON string or an array of values. Some RustDesk
+// clients send device_id as an array, which would otherwise fail to unmarshal.
+type flexString string
+
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*f = flexString(s)
+		return nil
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(b, &arr); err == nil {
+		if len(arr) > 0 {
+			var first string
+			if err := json.Unmarshal(arr[0], &first); err == nil {
+				*f = flexString(first)
+			} else {
+				*f = flexString(string(arr[0]))
+			}
+		}
+		return nil
+	}
+	// Unknown JSON type: ignore it rather than failing the whole request.
+	return nil
+}
+
+func (f flexString) String() string { return string(f) }
 
 // VersionCheckResponse is returned to the client. The client appends
 // /rustdesk-update.json to the returned Url to fetch signed metadata.
@@ -178,7 +206,7 @@ func (u *Update) Latest(c *gin.Context) {
 		"os":         req.Os,
 		"arch":       req.Arch,
 		"os_version": req.OsVersion,
-		"device_id":  req.DeviceId,
+		"device_id":  req.DeviceId.String(),
 		"typ":        req.Type,
 	}
 	global.Logger.WithFields(logFields).Info("update check: request received")

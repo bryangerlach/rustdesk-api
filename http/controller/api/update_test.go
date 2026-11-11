@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -97,3 +98,28 @@ func TestCandidateTargetsStableOrder(t *testing.T) {
 		t.Errorf("candidateTargets = %v, want %v", got, want)
 	}
 }
+
+func TestVersionCheckRequestDeviceID(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"string", `{"device_id":"abc123"}`, "abc123"},
+		{"array", `{"device_id":["abc123"]}`, "abc123"},
+		{"empty array", `{"device_id":[]}`, ""},
+		{"null", `{"device_id":null}`, ""},
+		{"full body array", `{"os":"windows","arch":"x86_64","device_id":["d1","d2"],"typ":"stable"}`, "d1"},
+	}
+	for _, c := range cases {
+		var req VersionCheckRequest
+		if err := json.Unmarshal([]byte(c.body), &req); err != nil {
+			t.Errorf("%s: unexpected error: %v", c.name, err)
+			continue
+		}
+		if got := req.DeviceId.String(); got != c.want {
+			t.Errorf("%s: device_id = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
