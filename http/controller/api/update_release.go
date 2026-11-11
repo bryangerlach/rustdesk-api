@@ -349,6 +349,14 @@ func (u *Update) DownloadReleaseFile(c *gin.Context) {
 		return
 	}
 
+	global.Logger.WithFields(logrus.Fields{
+		"ip":         c.ClientIP(),
+		"release_id": releaseID,
+		"build_id":   cb.Id,
+		"version":    cb.Version,
+		"file":       fileName,
+	}).Info("update release: request")
+
 	switch fileName {
 	case updateMetadataFilename:
 		metadataBytes, err := buildUpdateMetadataBytes(cb)
