@@ -285,6 +285,13 @@ func DatabaseAutoUpdate() {
 		}
 	}
 
+	// The version-gated migration above only runs when DatabaseVersion changes.
+	// Model-only changes (e.g. adding client_builds.log_url) would otherwise be
+	// missed, so always reconcile the client_builds table on startup.
+	if err := db.AutoMigrate(&model.ClientBuild{}); err != nil {
+		global.Logger.Error("client_builds auto migrate err :=>", err)
+	}
+
 }
 func Migrate(version uint) {
 	global.Logger.Info("Migrating....", version)
