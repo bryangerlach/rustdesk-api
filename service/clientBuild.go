@@ -15,6 +15,7 @@ import (
 
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/model"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -225,6 +226,17 @@ func (s *ClientBuildService) startRdgenBuild(cb *model.ClientBuild, jsonData []b
 	if cb.Version != "" {
 		endpoint += "&version=" + url.QueryEscape(cb.Version)
 	}
+
+	// Visibility for self-hosted update builds: confirm both keys made it into
+	// the JSON that rdgen receives.
+	global.Logger.WithFields(logrus.Fields{
+		"build_id":              cb.Id,
+		"target":                cb.Target,
+		"version":               cb.Version,
+		"has_update_public_key": strings.Contains(string(jsonData), `"update_public_key"`),
+		"has_app_version":       strings.Contains(string(jsonData), `"app_version"`),
+	}).Info("rdgen: starting build")
+
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(jsonData))
 	if err != nil {
 		return err

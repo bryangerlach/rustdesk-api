@@ -112,13 +112,7 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 		// semver build metadata format required by Cargo.toml (e.g. 1.5.0+016)
 		buildData := data
 		if builder == "rdgen" {
-			var jsonMap map[string]interface{}
-			if jsonErr := json.Unmarshal(buildData, &jsonMap); jsonErr == nil {
-				jsonMap["app_version"] = version + "+" + fmt.Sprintf("%03d", cb.Id)
-				if modified, mErr := json.Marshal(jsonMap); mErr == nil {
-					buildData = modified
-				}
-			}
+			buildData = injectAppVersion(buildData, version, cb.Id)
 		}
 
 		if err := cbSvc().StartBuild(cb, buildData); err != nil {
@@ -140,6 +134,22 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 		return
 	}
 	response.Success(c, createdBuilds)
+}
+
+// injectAppVersion adds app_version = <version>+<id padded to 3 digits> to the
+// builder JSON. rdgen writes this into Cargo.toml so the built client's
+// crate::VERSION carries the build number used for self-hosted updates.
+func injectAppVersion(data []byte, version string, id uint) []byte {
+	var jsonMap map[string]interface{}
+	if err := json.Unmarshal(data, &jsonMap); err != nil {
+		return data
+	}
+	jsonMap["app_version"] = fmt.Sprintf("%s+%03d", version, id)
+	modified, err := json.Marshal(jsonMap)
+	if err != nil {
+		return data
+	}
+	return modified
 }
 
 // TargetOptions 根据builder返回可用的target选项
