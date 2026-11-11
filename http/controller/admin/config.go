@@ -3,6 +3,7 @@ package admin
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
+	"github.com/lejianwen/rustdesk-api/v2/http/controller/api"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
@@ -101,11 +102,13 @@ func (co *Config) AdminConfig(c *gin.Context) {
 // @Summary Client builder settings
 // @Router /admin/config/client_builder [get]
 func (co *Config) ClientBuilder(c *gin.Context) {
+	pubKey, _ := api.GetUpdatePublicKeyBase64()
 	response.Success(c, &gin.H{
 		"api_base":           service.ClientBuilderBaseValue(),
 		"api_token":          service.ClientBuilderTokenValue(),
 		"rdgen_api_base":     service.RdgenBaseValue(),
 		"rdgen_api_token":     service.RdgenTokenValue(),
+		"update_public_key":  pubKey,
 	})
 }
 

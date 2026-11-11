@@ -32,6 +32,8 @@ func ApiInit(g *gin.Engine) {
 
 		up := &api.Update{}
 		frg.POST("/version/latest", up.Latest)
+		// RustDesk built-in updater metadata/signature/artifact paths.
+		g.GET("/rustdesk/rustdesk/releases/download/:releaseId/:filename", up.DownloadReleaseFile)
 	}
 
 	{
