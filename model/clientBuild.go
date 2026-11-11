@@ -12,6 +12,7 @@ type ClientBuild struct {
 	Version    string `json:"version"`
 	JobId      string `json:"job_id"`
 	StatusUrl  string `json:"status_url"`
+	LogUrl     string `json:"log_url"`
 	Status     string `json:"status"`
 	JsonFile   string `json:"json_file"`
 	Files      string `json:"-" gorm:"type:text"`

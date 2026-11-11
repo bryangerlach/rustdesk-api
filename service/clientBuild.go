@@ -276,6 +276,9 @@ func (s *ClientBuildService) startRdgenBuild(cb *model.ClientBuild, jsonData []b
 	cb.JobId = id
 	remotePlatform, _ := result["platform"].(string)
 	filename, _ := result["filename"].(string)
+	if logUrl, _ := result["log_url"].(string); logUrl != "" {
+		cb.LogUrl = logUrl
+	}
 	if remotePlatform != "" {
 		platform = remotePlatform
 	}
@@ -343,14 +346,21 @@ func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
 	if err := json.Unmarshal(body, &result); err != nil {
 		return err
 	}
+	if logUrl, _ := result["log_url"].(string); logUrl != "" {
+		cb.LogUrl = logUrl
+	}
 	status, _ := result["status"].(string)
-	switch status {
+	switch strings.ToLower(status) {
 	case "completed", "success":
 		cb.Status = "done"
-	case "in_progress":
+	case "in_progress", "queued", "waiting", "requested", "pending":
 		cb.Status = "running"
-	default: // failure, failed, error, cancelled, timed_out
-		cb.Status = "error"
+	default:
+		if strings.Contains(strings.ToLower(status), "starting") || strings.Contains(strings.ToLower(status), "progress") {
+			cb.Status = "running"
+		} else {
+			cb.Status = "error"
+		}
 	}
 
 	// Always capture whatever files rdgen reports, regardless of status,
