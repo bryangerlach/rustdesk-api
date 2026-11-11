@@ -22,6 +22,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
+	"github.com/sirupsen/logrus"
 )
 
 // VersionCheckRequest mirrors the RustDesk client's update check body.
@@ -166,12 +167,25 @@ func parseEd25519PrivateKey(data []byte) (ed25519.PrivateKey, error) {
 func (u *Update) Latest(c *gin.Context) {
 	var req VersionCheckRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		global.Logger.WithError(err).WithField("ip", c.ClientIP()).
+			Warn("update check: invalid request body")
 		response.Fail(c, 101, "ParamsError: "+err.Error())
 		return
 	}
 
+	logFields := logrus.Fields{
+		"ip":         c.ClientIP(),
+		"os":         req.Os,
+		"arch":       req.Arch,
+		"os_version": req.OsVersion,
+		"device_id":  req.DeviceId,
+		"typ":        req.Type,
+	}
+	global.Logger.WithFields(logFields).Info("update check: request received")
+
 	targets := candidateTargets(req.Os, req.Arch)
 	if len(targets) == 0 {
+		global.Logger.WithFields(logFields).Warn("update check: unsupported platform")
 		response.Fail(c, 101, "Unsupported platform")
 		return
 	}
@@ -179,6 +193,8 @@ func (u *Update) Latest(c *gin.Context) {
 	cb := &model.ClientBuild{}
 	if err := global.DB.Where("status = ? AND target IN ?", "done", targets).
 		Order("created_at desc").First(cb).Error; err != nil {
+		global.Logger.WithFields(logFields).WithField("targets", targets).
+			Info("update check: no matching done build")
 		response.Fail(c, 101, "No update available")
 		return
 	}
@@ -186,6 +202,11 @@ func (u *Update) Latest(c *gin.Context) {
 	cb.DecodeFiles()
 
 	if len(cb.FileList) == 0 {
+		global.Logger.WithFields(logFields).WithFields(logrus.Fields{
+			"build_id": cb.Id,
+			"version":  cb.Version,
+			"target":   cb.Target,
+		}).Warn("update check: build has no files")
 		response.Fail(c, 101, "No files available")
 		return
 	}
@@ -207,6 +228,12 @@ func (u *Update) Latest(c *gin.Context) {
 		if _, err := io.Copy(h, f); err == nil {
 			fileHash = hex.EncodeToString(h.Sum(nil))
 		}
+	} else {
+		global.Logger.WithFields(logFields).WithFields(logrus.Fields{
+			"build_id": cb.Id,
+			"file":     file,
+			"path":     localPath,
+		}).WithError(err).Warn("update check: artifact file missing on disk (size/sha256 will be empty)")
 	}
 
 	// Build metadata JSON.
@@ -240,6 +267,15 @@ func (u *Update) Latest(c *gin.Context) {
 
 	// Return base directory URL; client appends /rustdesk-update.json
 	baseURL := global.Config.Rustdesk.ApiServer + "/upload/client_build/" + idStr
+
+	global.Logger.WithFields(logFields).WithFields(logrus.Fields{
+		"build_id": cb.Id,
+		"version":  cb.Version,
+		"target":   cb.Target,
+		"file":     file,
+		"size":     size,
+		"sha256":   fileHash,
+	}).Info("update check: update available")
 
 	response.Success(c, VersionCheckResponse{
 		Url:    baseURL,
