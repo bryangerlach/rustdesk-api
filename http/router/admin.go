@@ -343,6 +343,7 @@ func ClientBuildBind(rg *gin.RouterGroup) {
 		aR.GET("/target_options", cont.TargetOptions)
 		aR.GET("/versions", cont.Versions)
 		aR.POST("/create", cont.Create)
+		aR.POST("/update", cont.Update)
 		aR.POST("/refresh_status", cont.RefreshStatus)
 		aR.POST("/delete", cont.Delete)
 		aR.POST("/batchDelete", cont.BatchDelete)

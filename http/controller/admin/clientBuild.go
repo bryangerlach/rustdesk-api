@@ -226,6 +226,33 @@ func (ct *ClientBuild) RefreshStatus(c *gin.Context) {
 	response.Success(c, cb)
 }
 
+// Update 更新构建配置（目前仅Auto Update）
+// @Tags 客户端构建
+// @Summary 修改构建是否参与自动更新
+// @Router /admin/client_build/update [post]
+func (ct *ClientBuild) Update(c *gin.Context) {
+	f := &admin.ClientBuildUpdateForm{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	if f.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
+	cb := cbSvc().InfoById(f.Id)
+	if cb.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
+	cb.ExcludeFromUpdate = f.ExcludeFromUpdate
+	if err := cbSvc().SetExcludeFromUpdate(cb.Id, f.ExcludeFromUpdate); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	response.Success(c, cb)
+}
+
 // Delete 删除
 // @Tags 客户端构建
 // @Summary 删除客户端构建

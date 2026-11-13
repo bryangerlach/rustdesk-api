@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	DefaultClientBuilderAPIBase = ""
-	DefaultClientBuilderAPIToken  = ""
+	DefaultClientBuilderAPIBase  = ""
+	DefaultClientBuilderAPIToken = ""
 	DefaultRdgenAPIBase          = ""
 	ClientBuilderStatusDone      = "done"
 )
@@ -30,8 +30,8 @@ const (
 const (
 	SettingKeyClientBuilderAPIBase  = "client_builder_api_base"
 	SettingKeyClientBuilderAPIToken = "client_builder_api_token"
-	SettingKeyRdgenAPIBase         = "rdgen_api_base"
-	SettingKeyRdgenAPIToken        = "rdgen_api_token"
+	SettingKeyRdgenAPIBase          = "rdgen_api_base"
+	SettingKeyRdgenAPIToken         = "rdgen_api_token"
 )
 
 // Deprecated: use clientBuilderAPIBase() instead.
@@ -226,6 +226,14 @@ func (s *ClientBuildService) Create(cb *model.ClientBuild) error {
 func (s *ClientBuildService) Update(cb *model.ClientBuild) error {
 	cb.EncodeFiles()
 	return DB.Model(cb).Updates(cb).Error
+}
+
+// SetExcludeFromUpdate toggles whether a build is offered to clients checking
+// for automatic updates. It updates the column directly so that setting the
+// value back to false is not skipped as a zero value by struct Updates.
+func (s *ClientBuildService) SetExcludeFromUpdate(id uint, exclude bool) error {
+	return DB.Model(&model.ClientBuild{}).Where("id = ?", id).
+		Update("exclude_from_update", exclude).Error
 }
 
 func (s *ClientBuildService) Delete(cb *model.ClientBuild) error {
@@ -460,7 +468,9 @@ func (s *ClientBuildService) refreshRdgenStatus(cb *model.ClientBuild) error {
 			}
 		}
 		if len(files) > 0 {
-			if cb.Status == "error" {cb.Status = "done"}
+			if cb.Status == "error" {
+				cb.Status = "done"
+			}
 			cb.FileList = files
 			cb.EncodeFiles()
 			if err := s.DownloadFiles(cb, files, "rdgen"); err != nil {

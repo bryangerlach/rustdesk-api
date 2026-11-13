@@ -11,3 +11,8 @@ type ClientBuildForm struct {
 	Target string `json:"target" form:"target"`
 	Name   string `json:"name" form:"name"`
 }
+
+type ClientBuildUpdateForm struct {
+	Id                uint `json:"id" form:"id"`
+	ExcludeFromUpdate bool `json:"exclude_from_update" form:"exclude_from_update"`
+}
