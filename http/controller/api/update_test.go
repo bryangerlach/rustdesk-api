@@ -28,6 +28,13 @@ func TestCandidateTargets(t *testing.T) {
 		{"linux", "x86_64", []string{"linux", "linux-x86_64-deb"}},
 		{"linux", "arm64", []string{"linux"}},
 		{"linux", "aarch64", []string{"linux"}},
+		// RustDesk Linux clients report the /etc/os-release ID, not "linux"
+		{"ubuntu", "amd64", []string{"linux", "linux-x86_64-deb"}},
+		{" Ubuntu ", "x86_64", []string{"linux", "linux-x86_64-deb"}},
+		{"debian", "arm64", []string{"linux"}},
+		{"fedora", "aarch64", []string{"linux"}},
+		{"arch", "x86_64", []string{"linux", "linux-x86_64-deb"}},
+		{"opensuse-tumbleweed", "amd64", []string{"linux", "linux-x86_64-deb"}},
 		{"macos", "arm64", []string{"macos", "macos-arm64-dmg"}},
 		{"macos", "x86_64", []string{"macos", "macos-x86_64-dmg"}},
 		{"android", "arm64-v8a", []string{"android", "android-arm64-v8a"}},
@@ -276,6 +283,3 @@ func TestUpdateMetadataSignature(t *testing.T) {
 		t.Error("signature does not verify over the context-prefixed metadata")
 	}
 }
-
-
-

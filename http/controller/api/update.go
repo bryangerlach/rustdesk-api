@@ -254,11 +254,11 @@ func (u *Update) Latest(c *gin.Context) {
 	url := releaseTagURL(releaseID)
 
 	global.Logger.WithFields(logFields).WithFields(logrus.Fields{
-		"build_id":   cb.Id,
-		"version":    cb.Version,
+		"build_id":    cb.Id,
+		"version":     cb.Version,
 		"app_version": appVersionFor(cb),
-		"target":     cb.Target,
-		"release_id": releaseID,
+		"target":      cb.Target,
+		"release_id":  releaseID,
 	}).Info("update check: update available")
 
 	// The RustDesk client expects a flat {"url": "..."} response and parses the
@@ -266,13 +266,30 @@ func (u *Update) Latest(c *gin.Context) {
 	c.JSON(http.StatusOK, VersionCheckResponse{Url: url})
 }
 
+// linuxDistroIDs are /etc/os-release IDs that RustDesk reports through
+// System::distribution_id() on Linux instead of the "linux" platform name.
+// Windows, macOS and Android report std::env::consts::OS.
+var linuxDistroIDs = map[string]struct{}{
+	"almalinux": {}, "alpine": {}, "amzn": {}, "arch": {}, "artix": {},
+	"centos": {}, "clear-linux-os": {}, "debian": {}, "deepin": {},
+	"elementary": {}, "endeavouros": {}, "fedora": {}, "garuda": {},
+	"gentoo": {}, "kali": {}, "linuxmint": {}, "manjaro": {}, "mx": {},
+	"nixos": {}, "ol": {}, "opensuse": {}, "opensuse-leap": {},
+	"opensuse-tumbleweed": {}, "oracle": {}, "photon": {}, "pop": {},
+	"raspbian": {}, "rhel": {}, "rocky": {}, "sled": {}, "sles": {},
+	"solus": {}, "ubuntu": {}, "void": {}, "zorin": {},
+}
+
 // candidateTargets returns possible ClientBuild target values for the given
 // client os/arch. It covers both dvforge specific targets (e.g.
 // "windows-x86_64-exe") and rdgen OS-level targets (e.g. "windows"), since
 // rdgen builds every architecture for an OS in a single build.
 func candidateTargets(os, arch string) []string {
-	os = strings.ToLower(os)
-	arch = strings.ToLower(arch)
+	os = strings.ToLower(strings.TrimSpace(os))
+	arch = strings.ToLower(strings.TrimSpace(arch))
+	if _, ok := linuxDistroIDs[os]; ok {
+		os = "linux"
+	}
 	switch os {
 	case "windows":
 		switch arch {
