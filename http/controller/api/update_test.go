@@ -1,18 +1,70 @@
 package api
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"html"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/sirupsen/logrus"
 )
+
+func TestReleasePageTemplateRendersFiles(t *testing.T) {
+	var buf bytes.Buffer
+	err := releasePageTemplate.Execute(&buf, releasePageData{
+		AppName:   "RustDesk",
+		Version:   "1.5.3",
+		ReleaseID: "v1.5.3+057",
+		Target:    "linux",
+		Files: []releasePageFile{{
+			Name: "rustdesk-1.5.3-x86_64.deb",
+			URL:  "https://updates.example.com/rustdesk/rustdesk/releases/download/v1.5.3+057/rustdesk-1.5.3-x86_64.deb",
+			Tags: "linux · x86_64 · deb",
+			Size: "12.3 MiB",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("render release page: %v", err)
+	}
+	page := html.UnescapeString(buf.String())
+	for _, want := range []string{
+		"RustDesk 1.5.3",
+		"v1.5.3+057",
+		"rustdesk-1.5.3-x86_64.deb",
+		"linux · x86_64 · deb",
+		"12.3 MiB",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("release page missing %q", want)
+		}
+	}
+}
+
+func TestFormatReleaseFileSize(t *testing.T) {
+	cases := []struct {
+		n    int64
+		want string
+	}{
+		{512, "512 B"},
+		{1024, "1.0 KiB"},
+		{1536, "1.5 KiB"},
+		{5 * 1024 * 1024, "5.0 MiB"},
+		{3 * 1024 * 1024 * 1024, "3.0 GiB"},
+	}
+	for _, c := range cases {
+		if got := formatReleaseFileSize(c.n); got != c.want {
+			t.Errorf("formatReleaseFileSize(%d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+}
 
 func TestCandidateTargets(t *testing.T) {
 	cases := []struct {

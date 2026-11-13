@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,10 +25,11 @@ import (
 )
 
 // RustDesk's built-in updater (1.4.x+) expects:
-//   1. POST /api/version/latest -> flat {"url": ".../rustdesk/rustdesk/releases/tag/<release_id>"}
-//   2. GET  <prefix>/rustdesk-update.json      (signed metadata)
-//   3. GET  <prefix>/rustdesk-update.json.sig  (JSON signature envelope)
-//   4. GET  <prefix>/<artifact file>
+//  1. POST /api/version/latest -> flat {"url": ".../rustdesk/rustdesk/releases/tag/<release_id>"}
+//  2. GET  <prefix>/rustdesk-update.json      (signed metadata)
+//  3. GET  <prefix>/rustdesk-update.json.sig  (JSON signature envelope)
+//  4. GET  <prefix>/<artifact file>
+//
 // where <prefix> is /rustdesk/rustdesk/releases/download/<release_id>/.
 const (
 	updateReleasePath      = "/rustdesk/rustdesk/releases"
@@ -402,4 +405,147 @@ func (u *Update) DownloadReleaseFile(c *gin.Context) {
 		}
 		c.File(localPath)
 	}
+}
+
+type releasePageData struct {
+	AppName   string
+	Version   string
+	ReleaseID string
+	Target    string
+	Files     []releasePageFile
+}
+
+type releasePageFile struct {
+	Name string
+	URL  string
+	Tags string
+	Size string
+}
+
+var releasePageTemplate = template.Must(template.New("release").Parse(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.AppName}} {{.Version}} downloads</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: #f5f5f7; color: #1d1d1f; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 20px 60px; }
+  h1 { margin: 0 0 4px; font-size: 1.9rem; }
+  p.sub { margin: 0 0 28px; color: #6e6e73; }
+  ul { list-style: none; margin: 0; padding: 0; border: 1px solid #d2d2d7; border-radius: 12px; overflow: hidden; background: #fff; }
+  li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-top: 1px solid #e5e5ea; }
+  li:first-child { border-top: 0; }
+  .meta { min-width: 0; }
+  .name { font-weight: 600; word-break: break-all; }
+  .tags { margin-top: 2px; color: #6e6e73; font-size: .85rem; }
+  .size { color: #6e6e73; font-size: .85rem; white-space: nowrap; }
+  a.dl { flex: none; text-decoration: none; background: #0071e3; color: #fff; padding: 8px 14px; border-radius: 980px; font-size: .9rem; font-weight: 600; }
+  a.dl:hover { background: #0077ed; }
+  .empty { padding: 18px; color: #6e6e73; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #000; color: #f5f5f7; }
+    ul { background: #1c1c1e; border-color: #3a3a3c; }
+    li { border-color: #2c2c2e; }
+    a.dl { background: #0a84ff; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{.AppName}} {{.Version}}</h1>
+  <p class="sub">Release {{.ReleaseID}}{{if .Target}} · {{.Target}}{{end}}</p>
+  <ul>
+  {{- range .Files}}
+    <li>
+      <div class="meta">
+        <div class="name">{{.Name}}</div>
+        {{- if .Tags}}<div class="tags">{{.Tags}}</div>{{end}}
+      </div>
+      {{- if .Size}}<span class="size">{{.Size}}</span>{{end}}
+      <a class="dl" href="{{.URL}}" download>Download</a>
+    </li>
+  {{- else}}
+    <li class="empty">No files are available for this release.</li>
+  {{- end}}
+  </ul>
+</main>
+</body>
+</html>`))
+
+// ReleasePage is the human-facing download page for a release. It is linked
+// from the update card on platforms without an in-place updater (Linux,
+// Android) and from portable Windows/macOS builds, so users can pick the
+// package that matches their distribution and architecture.
+// Route: GET /rustdesk/rustdesk/releases/tag/:releaseId
+func (u *Update) ReleasePage(c *gin.Context) {
+	releaseID := c.Param("releaseId")
+	cb, err := findBuildByReleaseID(releaseID)
+	if err != nil || cb.ExcludeFromUpdate {
+		c.String(http.StatusNotFound, "Release not found")
+		return
+	}
+
+	files := make([]releasePageFile, 0, len(cb.FileList))
+	for _, file := range cb.FileList {
+		if file == "" || filepath.Base(file) != file {
+			continue
+		}
+		tags := make([]string, 0, 3)
+		platform, arch, format, _, ok := inferArtifact(cb.Target, file)
+		if ok {
+			for _, tag := range []string{platform, arch, format} {
+				if tag != "" {
+					tags = append(tags, tag)
+				}
+			}
+		}
+		size := ""
+		localPath := filepath.Join(global.Config.Gin.ResourcesPath, "public", "upload",
+			"client_build", strconv.Itoa(int(cb.Id)), file)
+		if info, statErr := os.Stat(localPath); statErr == nil {
+			size = formatReleaseFileSize(info.Size())
+		}
+		files = append(files, releasePageFile{
+			Name: file,
+			URL:  releaseDownloadBase(releaseID) + url.PathEscape(file),
+			Tags: strings.Join(tags, " · "),
+			Size: size,
+		})
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].Tags == files[j].Tags {
+			return files[i].Name < files[j].Name
+		}
+		return files[i].Tags < files[j].Tags
+	})
+
+	appName := cb.Name
+	if appName == "" {
+		appName = "RustDesk"
+	}
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	if err := releasePageTemplate.Execute(c.Writer, releasePageData{
+		AppName:   appName,
+		Version:   cb.Version,
+		ReleaseID: releaseID,
+		Target:    cb.Target,
+		Files:     files,
+	}); err != nil {
+		global.Logger.WithError(err).Warn("update release: failed to render page")
+	}
+}
+
+func formatReleaseFileSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for n >= div*unit && exp < 4 {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
 }
