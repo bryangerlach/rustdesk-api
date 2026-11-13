@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -93,7 +94,92 @@ func rdgenAPIToken() string {
 
 var buildHTTPClient = &http.Client{Timeout: 2 * time.Minute}
 
+const (
+	rustdeskReleasesURL  = "https://api.github.com/repos/rustdesk/rustdesk/releases"
+	rustdeskVersionLimit = 3
+	rustdeskVersionTTL   = 10 * time.Minute
+)
+
+var (
+	releaseVersionsClient = &http.Client{Timeout: 15 * time.Second}
+	releaseVersionsMu     sync.Mutex
+	releaseVersionsCache  []string
+	releaseVersionsAt     time.Time
+)
+
 type ClientBuildService struct{}
+
+// Versions returns the most recent official RustDesk release versions, newest
+// first. Results are cached briefly to stay well within GitHub's API limits.
+func (s *ClientBuildService) Versions() ([]string, error) {
+	releaseVersionsMu.Lock()
+	defer releaseVersionsMu.Unlock()
+
+	if len(releaseVersionsCache) > 0 && time.Since(releaseVersionsAt) < rustdeskVersionTTL {
+		return releaseVersionsCache, nil
+	}
+
+	versions, err := fetchRustdeskReleaseVersions()
+	if err != nil {
+		// Fall back to stale data rather than breaking the build dialog when
+		// GitHub is temporarily unreachable.
+		if len(releaseVersionsCache) > 0 {
+			return releaseVersionsCache, nil
+		}
+		return nil, err
+	}
+	releaseVersionsCache = versions
+	releaseVersionsAt = time.Now()
+	return versions, nil
+}
+
+func fetchRustdeskReleaseVersions() ([]string, error) {
+	req, err := http.NewRequest(http.MethodGet, rustdeskReleasesURL+"?per_page=10", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "rustdesk-api")
+
+	resp, err := releaseVersionsClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github releases returned status %d", resp.StatusCode)
+	}
+
+	var releases []rustdeskRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, err
+	}
+	return releaseVersionsFromJSON(releases, rustdeskVersionLimit), nil
+}
+
+type rustdeskRelease struct {
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+}
+
+func releaseVersionsFromJSON(releases []rustdeskRelease, limit int) []string {
+	versions := make([]string, 0, limit)
+	for _, r := range releases {
+		if r.Draft || r.Prerelease {
+			continue
+		}
+		v := strings.TrimSpace(strings.TrimPrefix(r.TagName, "v"))
+		if v == "" {
+			continue
+		}
+		versions = append(versions, v)
+		if len(versions) >= limit {
+			break
+		}
+	}
+	return versions
+}
 
 func clientBuildDir(cb *model.ClientBuild) string {
 	return filepath.Join(global.Config.Gin.ResourcesPath, "public", "upload", "client_build", strconv.Itoa(int(cb.Id)))

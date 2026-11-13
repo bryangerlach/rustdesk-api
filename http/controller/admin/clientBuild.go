@@ -188,6 +188,19 @@ func (ct *ClientBuild) TargetOptions(c *gin.Context) {
 	response.Success(c, gin.H{"targets": targets})
 }
 
+// Versions 获取官方RustDesk最新发布版本
+// @Tags 客户端构建
+// @Summary 获取客户端构建可用的版本选项
+// @Router /admin/client_build/versions [get]
+func (ct *ClientBuild) Versions(c *gin.Context) {
+	versions, err := cbSvc().Versions()
+	if err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	response.Success(c, gin.H{"versions": versions})
+}
+
 // RefreshStatus 刷新构建状态
 // @Tags 客户端构建
 // @Summary 刷新客户端构建状态
