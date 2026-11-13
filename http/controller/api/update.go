@@ -217,7 +217,7 @@ func (u *Update) Latest(c *gin.Context) {
 	}
 
 	cb := &model.ClientBuild{}
-	if err := global.DB.Where("status = ? AND target IN ?", "done", targets).
+	if err := global.DB.Where("status = ? AND target IN ? AND (exclude_from_update = ? OR exclude_from_update IS NULL)", "done", targets, false).
 		Order("created_at desc").First(cb).Error; err != nil {
 		global.Logger.WithFields(logFields).WithField("targets", targets).
 			Info("update check: no matching done build")

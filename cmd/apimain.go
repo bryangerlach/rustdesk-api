@@ -291,6 +291,12 @@ func DatabaseAutoUpdate() {
 	if err := db.AutoMigrate(&model.ClientBuild{}); err != nil {
 		global.Logger.Error("client_builds auto migrate err :=>", err)
 	}
+	// Existing builds predate exclude_from_update and must remain eligible for
+	// automatic updates after the column is added.
+	if err := db.Model(&model.ClientBuild{}).Where("exclude_from_update IS NULL").
+		Update("exclude_from_update", false).Error; err != nil {
+		global.Logger.Error("client_builds exclude_from_update backfill err :=>", err)
+	}
 
 }
 func Migrate(version uint) {

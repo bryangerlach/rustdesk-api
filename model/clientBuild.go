@@ -5,19 +5,22 @@ import "encoding/json"
 // ClientBuild 客户端构建记录
 type ClientBuild struct {
 	IdModel
-	UserId     uint   `json:"user_id"`
-	Builder    string `json:"builder" gorm:"default:dvforge"`
-	Name       string `json:"name"`
-	Target     string `json:"target"`
-	Version    string `json:"version"`
-	JobId      string `json:"job_id"`
-	StatusUrl  string `json:"status_url"`
-	LogUrl     string `json:"log_url"`
-	Status     string `json:"status"`
-	JsonFile   string `json:"json_file"`
-	Files      string `json:"-" gorm:"type:text"`
-	FileList   []string `gorm:"-" json:"files"`
-	Error      string `json:"error"`
+	UserId    uint   `json:"user_id"`
+	Builder   string `json:"builder" gorm:"default:dvforge"`
+	Name      string `json:"name"`
+	Target    string `json:"target"`
+	Version   string `json:"version"`
+	JobId     string `json:"job_id"`
+	StatusUrl string `json:"status_url"`
+	LogUrl    string `json:"log_url"`
+	Status    string `json:"status"`
+	// ExcludeFromUpdate prevents this build from being offered to clients
+	// checking for updates. Useful for one-off builds with custom settings.
+	ExcludeFromUpdate bool     `json:"exclude_from_update" gorm:"not null;default:false"`
+	JsonFile          string   `json:"json_file"`
+	Files             string   `json:"-" gorm:"type:text"`
+	FileList          []string `gorm:"-" json:"files"`
+	Error             string   `json:"error"`
 	TimeModel
 }
 

@@ -52,6 +52,7 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 	builder := c.PostForm("builder")
 	version := c.PostForm("version")
 	name := c.PostForm("name")
+	excludeFromUpdate, _ := strconv.ParseBool(c.PostForm("exclude_from_update"))
 	if builder == "" {
 		builder = "dvforge"
 	}
@@ -93,14 +94,15 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 	var firstErr error
 	for _, target := range targets {
 		cb := &model.ClientBuild{
-			Builder:  builder,
-			Target:   target,
-			Version:  version,
-			Name:     name + " - " + target,
-			Status:   "pending",
-			JsonFile: file.Filename,
-			Files:    "[]",
-			FileList: []string{},
+			Builder:           builder,
+			Target:            target,
+			Version:           version,
+			Name:              name + " - " + target,
+			Status:            "pending",
+			ExcludeFromUpdate: excludeFromUpdate,
+			JsonFile:          file.Filename,
+			Files:             "[]",
+			FileList:          []string{},
 		}
 		if err := cbSvc().Create(cb); err != nil {
 			if firstErr == nil {
