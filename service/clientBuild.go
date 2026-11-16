@@ -267,6 +267,18 @@ func (s *ClientBuildService) startDVForgeBuild(cb *model.ClientBuild, jsonData [
 		endpoint += "&version=" + httpQueryEscape(version)
 	}
 	url := endpoint
+
+	// Visibility for self-hosted update builds: confirm the update settings
+	// made it into the JSON that DVForge receives.
+	global.Logger.WithFields(logrus.Fields{
+		"build_id":              cb.Id,
+		"target":                cb.Target,
+		"version":               cb.Version,
+		"has_update_public_key": strings.Contains(string(jsonData), `"update_public_key"`),
+		"has_update_url":        strings.Contains(string(jsonData), `"update_url"`),
+		"has_app_version":       strings.Contains(string(jsonData), `"app_version"`),
+	}).Info("dvforge: starting build")
+
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonData))
 	if err != nil {
 		return err

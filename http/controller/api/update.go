@@ -96,7 +96,7 @@ func loadUpdateSigningKey() (ed25519.PrivateKey, error) {
 				return
 			}
 			pubKeyBase64 := base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey))
-			global.Logger.Info("Update public key (add to TRUSTED_UPDATE_KEYS): " + pubKeyBase64)
+			global.Logger.Info("Update public key (auto-injected into client builds): " + pubKeyBase64)
 			updateSigningKey = key
 			return
 		}
@@ -383,17 +383,33 @@ func selectUpdateFile(files []string, os, arch string) string {
 	return files[0]
 }
 
-// InjectUpdatePublicKey adds the update signing public key to a client builder
-// JSON config so the built client can verify update metadata.
-func InjectUpdatePublicKey(data []byte) ([]byte, error) {
+// InjectUpdateConfig adds the self-hosted update settings to a client builder
+// JSON config so the built client can verify update metadata served by this
+// server. It injects:
+//
+//   - update_public_key: the ed25519 key used to sign rustdesk-update.json
+//   - update_url:        <apiBase>/api/version/latest (used by DVForge)
+//   - downloadLink:      <apiBase> (rdgen derives its update URL from this)
+//   - removeNewVersionNotif = false (the update check must stay enabled)
+//
+// The signing key is created automatically on first use (see
+// GetUpdatePublicKeyBase64).
+func InjectUpdateConfig(data []byte, apiBase string) ([]byte, error) {
 	pubKey, err := GetUpdatePublicKeyBase64()
-	if err != nil || pubKey == "" {
-		return data, nil
+	if err != nil {
+		return data, err
 	}
 	var jsonMap map[string]interface{}
 	if err := json.Unmarshal(data, &jsonMap); err != nil {
-		return data, nil
+		return data, err
 	}
-	jsonMap["update_public_key"] = pubKey
+	if pubKey != "" {
+		jsonMap["update_public_key"] = pubKey
+	}
+	if base := strings.TrimRight(strings.TrimSpace(apiBase), "/"); base != "" {
+		jsonMap["downloadLink"] = base
+		jsonMap["update_url"] = base + "/api/version/latest"
+	}
+	jsonMap["removeNewVersionNotif"] = false
 	return json.Marshal(jsonMap)
 }

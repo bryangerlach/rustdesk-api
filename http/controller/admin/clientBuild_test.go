@@ -11,8 +11,8 @@ import (
 )
 
 // TestCreateBuildJSONHasUpdateKeyAndAppVersion verifies the exact JSON that
-// ClientBuild.Create hands to rdgen contains both the update public key and
-// the per-build app_version.
+// ClientBuild.Create hands to a builder contains the self-hosted update
+// settings and the per-build app_version.
 func TestCreateBuildJSONHasUpdateKeyAndAppVersion(t *testing.T) {
 	tmp := t.TempDir()
 	oldConfig := global.Config
@@ -27,9 +27,9 @@ func TestCreateBuildJSONHasUpdateKeyAndAppVersion(t *testing.T) {
 
 	input := []byte(`{"serverIP":"example.com","custom":"value"}`)
 
-	withKey, err := api.InjectUpdatePublicKey(input)
+	withKey, err := api.InjectUpdateConfig(input, global.Config.Rustdesk.ApiServer)
 	if err != nil {
-		t.Fatalf("InjectUpdatePublicKey: %v", err)
+		t.Fatalf("InjectUpdateConfig: %v", err)
 	}
 	out := injectAppVersion(withKey, "1.5.1", 60)
 
@@ -47,6 +47,15 @@ func TestCreateBuildJSONHasUpdateKeyAndAppVersion(t *testing.T) {
 	}
 	if m["app_version"] != "1.5.1+060" {
 		t.Errorf("app_version = %v, want 1.5.1+060", m["app_version"])
+	}
+	if m["downloadLink"] != "https://updates.example.com" {
+		t.Errorf("downloadLink = %v, want https://updates.example.com", m["downloadLink"])
+	}
+	if m["update_url"] != "https://updates.example.com/api/version/latest" {
+		t.Errorf("update_url = %v, want https://updates.example.com/api/version/latest", m["update_url"])
+	}
+	if m["removeNewVersionNotif"] != false {
+		t.Errorf("removeNewVersionNotif = %v, want false", m["removeNewVersionNotif"])
 	}
 	if m["serverIP"] != "example.com" {
 		t.Errorf("existing config was lost: %v", m)

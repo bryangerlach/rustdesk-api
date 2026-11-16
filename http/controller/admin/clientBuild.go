@@ -81,10 +81,15 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 		name = file.Filename
 	}
 
-	// Embed the update signing public key into the uploaded builder JSON so the
-	// built client can verify update metadata.
+	// Embed the self-hosted update settings into the uploaded builder JSON so
+	// the built client can verify update metadata. The API server address is
+	// injected as both `downloadLink` (rdgen's update base) and `update_url`
+	// (DVForge's explicit update check URL). The signing key is generated on
+	// first use when the configured file does not exist yet.
 	if builder == "dvforge" || builder == "rdgen" {
-		if injected, injErr := api.InjectUpdatePublicKey(data); injErr == nil {
+		if injected, injErr := api.InjectUpdateConfig(data, global.Config.Rustdesk.ApiServer); injErr != nil {
+			global.Logger.WithError(injErr).Warn("client build: update config injection failed")
+		} else {
 			data = injected
 		}
 	}
@@ -110,10 +115,12 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 			}
 			continue
 		}
-		// 为 rdgen 构建注入 app_version: <version>+<id padded to 3 digits>
-		// semver build metadata format required by Cargo.toml (e.g. 1.5.0+016)
+		// Both builders embed app_version: <version>+<id padded to 3 digits>,
+		// the semver build metadata format required by Cargo.toml (e.g.
+		// 1.5.1+016). The client compares it with the release id returned by
+		// /version/latest so each build is a distinct, ordered update.
 		buildData := data
-		if builder == "rdgen" {
+		if version != "" {
 			buildData = injectAppVersion(buildData, version, cb.Id)
 		}
 
@@ -139,7 +146,7 @@ func (ct *ClientBuild) Create(c *gin.Context) {
 }
 
 // injectAppVersion adds app_version = <version>+<id padded to 3 digits> to the
-// builder JSON. rdgen writes this into Cargo.toml so the built client's
+// builder JSON. Both builders write this into Cargo.toml so the built client's
 // crate::VERSION carries the build number used for self-hosted updates.
 func injectAppVersion(data []byte, version string, id uint) []byte {
 	var jsonMap map[string]interface{}

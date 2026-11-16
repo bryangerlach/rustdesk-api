@@ -16,7 +16,14 @@ Set this to the location of your rustdesk key, this is the location inside the c
 
 ### - RUSTDESK_API_RUSTDESK_UPDATE_KEY_FILE=/data/update_signing_key.pem
 
-This is an optional update signing key to verify updates. Automatic updates are currently a work in progress, and this may not work yet.
+This is the ed25519 signing key used for self-hosted automatic updates. The API
+signs `rustdesk-update.json` with it and injects the matching public key into
+every client build (both DVForge and rdgen). If the file does not exist, the API
+creates a new key automatically on first use and logs the base64 public key.
+
+The API also injects its public base URL (`api-server`) as `downloadLink` and
+`update_url`, so the built client checks `/api/version/latest` on this server.
+Signed updates require a RustDesk 1.5.1+ source tag.
 
 ## volumes:
 ### - /opt/rustdesk/server:/data
