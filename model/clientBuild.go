@@ -16,11 +16,15 @@ type ClientBuild struct {
 	Status    string `json:"status"`
 	// ExcludeFromUpdate prevents this build from being offered to clients
 	// checking for updates. Useful for one-off builds with custom settings.
-	ExcludeFromUpdate bool     `json:"exclude_from_update" gorm:"not null;default:false"`
-	JsonFile          string   `json:"json_file"`
-	Files             string   `json:"-" gorm:"type:text"`
-	FileList          []string `gorm:"-" json:"files"`
-	Error             string   `json:"error"`
+	ExcludeFromUpdate bool `json:"exclude_from_update" gorm:"not null;default:false"`
+	// IsLatestUpdate marks a build that the update check currently returns for
+	// at least one client platform. It is computed when listing builds and is
+	// not persisted.
+	IsLatestUpdate bool     `json:"is_latest_update" gorm:"-"`
+	JsonFile       string   `json:"json_file"`
+	Files          string   `json:"-" gorm:"type:text"`
+	FileList       []string `gorm:"-" json:"files"`
+	Error          string   `json:"error"`
 	TimeModel
 }
 

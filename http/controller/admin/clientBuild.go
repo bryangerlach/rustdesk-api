@@ -23,8 +23,21 @@ import (
 type ClientBuild struct {
 }
 
+const latestUpdateDeleteBlocked = "This build is the latest automatic update for at least one platform. Exclude it from auto update or build a newer version before deleting."
+
 func cbSvc() *service.ClientBuildService {
 	return &service.ClientBuildService{}
+}
+
+// latestUpdateIds returns the ids of builds currently served as the latest
+// automatic update for at least one client platform.
+func latestUpdateIds() (map[uint]bool, error) {
+	ids, err := api.LatestUpdateBuildIDs()
+	if err != nil {
+		global.Logger.WithError(err).Warn("client build: failed to compute latest updates")
+		return nil, err
+	}
+	return ids, nil
 }
 
 // List 列表
@@ -42,6 +55,12 @@ func (ct *ClientBuild) List(c *gin.Context) {
 			tx.Where("user_id = ?", query.UserId)
 		}
 	})
+	latest, err := latestUpdateIds()
+	if err == nil {
+		for _, cb := range res.ClientBuilds {
+			cb.IsLatestUpdate = latest[cb.Id]
+		}
+	}
 	response.Success(c, res)
 }
 
@@ -290,6 +309,15 @@ func (ct *ClientBuild) Delete(c *gin.Context) {
 	}
 	cb := cbSvc().InfoById(f.Id)
 	if cb.Id > 0 {
+		latest, latestErr := latestUpdateIds()
+		if latestErr != nil {
+			response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+latestErr.Error())
+			return
+		}
+		if latest[cb.Id] {
+			response.Fail(c, 101, latestUpdateDeleteBlocked)
+			return
+		}
 		if err := cbSvc().Delete(cb); err != nil {
 			response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 			return
@@ -314,6 +342,21 @@ func (ct *ClientBuild) BatchDelete(c *gin.Context) {
 	}
 	if len(f.Ids) == 0 {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
+	latest, err := latestUpdateIds()
+	if err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	blocked := make([]string, 0, len(f.Ids))
+	for _, id := range f.Ids {
+		if latest[id] {
+			blocked = append(blocked, strconv.Itoa(int(id)))
+		}
+	}
+	if len(blocked) > 0 {
+		response.Fail(c, 101, fmt.Sprintf("%s Blocked build ids: %s.", latestUpdateDeleteBlocked, strings.Join(blocked, ", ")))
 		return
 	}
 	if err := cbSvc().BatchDelete(f.Ids); err != nil {

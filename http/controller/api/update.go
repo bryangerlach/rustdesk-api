@@ -218,7 +218,7 @@ func (u *Update) Latest(c *gin.Context) {
 
 	cb := &model.ClientBuild{}
 	if err := global.DB.Where("status = ? AND target IN ? AND (exclude_from_update = ? OR exclude_from_update IS NULL)", "done", targets, false).
-		Order("created_at desc").First(cb).Error; err != nil {
+		Order("created_at desc, id desc").First(cb).Error; err != nil {
 		global.Logger.WithFields(logFields).WithField("targets", targets).
 			Info("update check: no matching done build")
 		c.JSON(http.StatusNotFound, gin.H{"error": "No update available"})
@@ -331,6 +331,72 @@ func candidateTargets(os, arch string) []string {
 		}
 	}
 	return nil
+}
+
+// updateCheckPlatforms lists the client os/arch combinations that can request
+// an automatic update. candidateTargets returns a fixed list for each pair, so
+// iterating these covers every target set /version/latest can select from.
+var updateCheckPlatforms = [][2]string{
+	{"windows", "x86_64"},
+	{"windows", "386"},
+	{"linux", "x86_64"},
+	{"linux", "aarch64"},
+	{"linux", "armv7"},
+	{"macos", "x86_64"},
+	{"macos", "aarch64"},
+	{"android", "aarch64"},
+	{"android", "armv7"},
+	{"android", "x86_64"},
+	{"android", "x86"},
+}
+
+type updateBuildCandidate struct {
+	Id     uint
+	Target string
+}
+
+// latestUpdateBuildIDs returns the ids of builds that /version/latest would
+// pick for at least one supported client platform. builds must be ordered
+// newest first, matching the update check query.
+func latestUpdateBuildIDs(builds []updateBuildCandidate) map[uint]bool {
+	ids := make(map[uint]bool)
+	for _, platform := range updateCheckPlatforms {
+		targets := candidateTargets(platform[0], platform[1])
+		if len(targets) == 0 {
+			continue
+		}
+		allowed := make(map[string]struct{}, len(targets))
+		for _, t := range targets {
+			allowed[t] = struct{}{}
+		}
+		for _, b := range builds {
+			if _, ok := allowed[b.Target]; ok {
+				ids[b.Id] = true
+				break
+			}
+		}
+	}
+	return ids
+}
+
+// LatestUpdateBuildIDs loads completed builds that participate in automatic
+// updates and returns the ids currently served as the latest update for at
+// least one client platform.
+func LatestUpdateBuildIDs() (map[uint]bool, error) {
+	var builds []*model.ClientBuild
+	err := global.DB.Model(&model.ClientBuild{}).
+		Select("id", "target").
+		Where("status = ? AND (exclude_from_update = ? OR exclude_from_update IS NULL)", "done", false).
+		Order("created_at desc, id desc").
+		Find(&builds).Error
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]updateBuildCandidate, 0, len(builds))
+	for _, b := range builds {
+		candidates = append(candidates, updateBuildCandidate{Id: b.Id, Target: b.Target})
+	}
+	return latestUpdateBuildIDs(candidates), nil
 }
 
 // archPatterns returns filename substrings that match the client's reported arch.

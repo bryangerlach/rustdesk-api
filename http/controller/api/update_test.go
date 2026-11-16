@@ -205,6 +205,53 @@ func TestCandidateTargetsDVForgeIDs(t *testing.T) {
 	}
 }
 
+func TestLatestUpdateBuildIDs(t *testing.T) {
+	// newest first, matching the /version/latest query order.
+	builds := []updateBuildCandidate{
+		{Id: 10, Target: "windows"},
+		{Id: 9, Target: "windows-x86_64-exe"},
+		{Id: 8, Target: "windows-x86_64-msi"},
+		{Id: 7, Target: "linux"},
+		{Id: 6, Target: "linux-x86_64-deb"},
+		{Id: 5, Target: "linux-x86_64-rpm"},
+		{Id: 4, Target: "macos-universal-dmg"},
+		{Id: 3, Target: "macos-arm64-dmg"},
+		{Id: 2, Target: "android"},
+		{Id: 1, Target: "android-arm64"},
+	}
+	got := latestUpdateBuildIDs(builds)
+
+	// The generic Windows build is newer than every specific Windows build, so
+	// it wins for Windows x86_64 and 386 alike. The MSI target is never part of
+	// an update check, so it is not latest.
+	for _, id := range []uint{10, 7, 4, 2} {
+		if !got[id] {
+			t.Errorf("build %d should be marked latest, got %v", id, got)
+		}
+	}
+	// The specific Windows exe is shadowed by the newer generic build.
+	if got[9] {
+		t.Errorf("build 9 is shadowed by newer build 10")
+	}
+	if got[8] {
+		t.Errorf("msi target should never be selected by an update check")
+	}
+	// The linux deb is shadowed by the newer generic linux build.
+	if got[6] {
+		t.Errorf("build 6 is shadowed by newer build 7")
+	}
+	if got[5] {
+		t.Errorf("rpm target should never be selected by an update check")
+	}
+	// macos-universal is only shadowed by macos generic (id 4 comes first).
+	if got[3] {
+		t.Errorf("build 3 is shadowed by newer universal build 4")
+	}
+	if got[1] {
+		t.Errorf("build 1 is shadowed by newer generic android build 2")
+	}
+}
+
 func TestVersionCheckRequestDeviceID(t *testing.T) {
 	cases := []struct {
 		name string
