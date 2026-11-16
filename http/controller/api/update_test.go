@@ -166,6 +166,45 @@ func TestCandidateTargetsStableOrder(t *testing.T) {
 	}
 }
 
+func TestCandidateTargetsDVForgeIDs(t *testing.T) {
+	cases := []struct {
+		os, arch  string
+		wantFirst string
+	}{
+		{"linux", "arm64", "linux-aarch64-deb"},
+		{"macos", "arm64", "macos-arm64-dmg"},
+		{"macos", "x86_64", "macos-x86_64-dmg"},
+		{"android", "arm64-v8a", "android-arm64"},
+		{"android", "armeabi-v7a", "android-armv7"},
+		{"android", "x86_64", "android-x86_64"},
+	}
+	for _, c := range cases {
+		got := candidateTargets(c.os, c.arch)
+		if len(got) == 0 || got[0] != c.wantFirst {
+			t.Errorf("candidateTargets(%q, %q) = %v, want first %q", c.os, c.arch, got, c.wantFirst)
+		}
+	}
+
+	// Universal artifacts are valid fallbacks for either architecture.
+	for _, c := range [][2]string{{"macos", "arm64"}, {"macos", "x86_64"}, {"android", "arm64"}, {"android", "armv7"}, {"android", "x86_64"}} {
+		got := candidateTargets(c[0], c[1])
+		want := "android-universal"
+		if c[0] == "macos" {
+			want = "macos-universal-dmg"
+		}
+		found := false
+		for _, target := range got {
+			if target == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("candidateTargets(%q, %q) = %v, want to contain %q", c[0], c[1], got, want)
+		}
+	}
+}
+
 func TestVersionCheckRequestDeviceID(t *testing.T) {
 	cases := []struct {
 		name string

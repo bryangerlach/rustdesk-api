@@ -161,6 +161,25 @@ func injectAppVersion(data []byte, version string, id uint) []byte {
 	return modified
 }
 
+// dvforgeTargets mirrors the target IDs in DVForge's builder/detect.py.
+// Keep this list in sync with DVForge; the farm queue passes the ID through
+// unchanged and DVForge rejects unknown IDs before starting a build.
+var dvforgeTargets = []string{
+	"windows-x86_64-exe",
+	"windows-x86_64-msi",
+	"linux-x86_64-deb",
+	"linux-x86_64-rpm",
+	"linux-x86_64-appimage",
+	"linux-aarch64-deb",
+	"macos-arm64-dmg",
+	"macos-x86_64-dmg",
+	"macos-universal-dmg",
+	"android-arm64",
+	"android-armv7",
+	"android-x86_64",
+	"android-universal",
+}
+
 // TargetOptions 根据builder返回可用的target选项
 // @Tags 客户端构建
 // @Summary 获取构建目标选项
@@ -177,19 +196,10 @@ func (ct *ClientBuild) TargetOptions(c *gin.Context) {
 		// rdgen按OS构建所有架构，所以target是OS级别
 		targets = []string{"windows", "windows-x86", "linux", "android", "macos"}
 	case "dvforge":
-		// dvforge使用具体的target字符串
-		targets = []string{
-			"windows-386-exe",
-			"windows-amd64-exe",
-			"windows-arm64-exe",
-			"linux-x86_64-deb",
-			"linux-arm64-deb",
-			"macos-x86_64-dmg",
-			"macos-arm64-dmg",
-			"android-arm64-v8a",
-			"android-armeabi-v7a",
-			"android-x86_64",
-		}
+		// These IDs must match builder/detect.py TARGETS in DVForge. The farm
+		// queue forwards them verbatim to POST /api/build/start, which rejects
+		// anything else with "Select a non-empty list of known targets".
+		targets = dvforgeTargets
 	default:
 		targets = []string{}
 	}

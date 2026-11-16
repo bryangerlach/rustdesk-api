@@ -61,3 +61,46 @@ func TestCreateBuildJSONHasUpdateKeyAndAppVersion(t *testing.T) {
 		t.Errorf("existing config was lost: %v", m)
 	}
 }
+
+// TestDVForgeTargetsMatchDVForge guards against the target IDs drifting from
+// DVForge's builder/detect.py. DVForge rejects unknown IDs with
+// "Select a non-empty list of known targets".
+func TestDVForgeTargetsMatchDVForge(t *testing.T) {
+	required := []string{
+		"windows-x86_64-exe",
+		"linux-x86_64-deb",
+		"linux-aarch64-deb",
+		"macos-arm64-dmg",
+		"macos-x86_64-dmg",
+		"android-arm64",
+		"android-armv7",
+		"android-x86_64",
+	}
+	// IDs from the old/stale list that DVForge has never recognised.
+	forbidden := []string{
+		"windows-386-exe",
+		"windows-amd64-exe",
+		"windows-arm64-exe",
+		"linux-arm64-deb",
+		"android-arm64-v8a",
+		"android-armeabi-v7a",
+	}
+
+	seen := make(map[string]bool, len(dvforgeTargets))
+	for _, target := range dvforgeTargets {
+		if seen[target] {
+			t.Errorf("duplicate dvforge target %q", target)
+		}
+		seen[target] = true
+	}
+	for _, target := range required {
+		if !seen[target] {
+			t.Errorf("missing dvforge target %q", target)
+		}
+	}
+	for _, target := range forbidden {
+		if seen[target] {
+			t.Errorf("dvforge target %q is not a DVForge target ID", target)
+		}
+	}
+}

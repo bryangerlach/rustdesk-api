@@ -2,6 +2,20 @@
 
 The docker compose file will include the rustdesk server and rustdesk api server with client builder all in one. You can set a DVForge server and an rdgen server. If you do not run your own client builder server, you can use https://rdgen.crayoneater.org as the rdgen server, this is the publicly hosted rdgen server.
 
+## Client builder settings
+
+Open the admin **Client Builder** settings and set `api_base` to the DVForge
+**farm queue**, i.e. the server that accepts `POST /job?targets=...`. This is
+not the DVForge web UI on port 8765; that endpoint is used by the worker on the
+build machine. Set `api_token` to the queue's bearer token when one is
+configured.
+
+The target IDs returned by `/admin/client_build/target_options` must match
+DVForge's `builder/detect.py` exactly (for example `windows-x86_64-exe`,
+`linux-aarch64-deb`, `android-arm64`). The farm queue passes the ID through to
+DVForge unchanged, and DVForge rejects unknown IDs with
+`Select a non-empty list of known targets`.
+
 ## docker-compose
 
 Use the docker-compose-client-builder.yml file to start the servers.

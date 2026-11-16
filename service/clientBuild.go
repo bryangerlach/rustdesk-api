@@ -526,7 +526,16 @@ func (s *ClientBuildService) refreshDVForgeStatus(cb *model.ClientBuild) error {
 	}
 	state, _ := result["state"].(string)
 	if state != "" {
-		cb.Status = state
+		// The farm queue reports terminal failures as "failed"; store them as
+		// "error" so the poller stops retrying and the UI shows the failure.
+		if state == "failed" {
+			cb.Status = "error"
+		} else {
+			cb.Status = state
+		}
+	}
+	if msg, _ := result["error"].(string); msg != "" {
+		cb.Error = msg
 	}
 	if state == ClientBuilderStatusDone {
 		// files

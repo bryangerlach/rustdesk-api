@@ -305,7 +305,7 @@ func candidateTargets(os, arch string) []string {
 		case "amd64", "x86_64":
 			return []string{"linux-x86_64-deb", "linux"}
 		case "arm64", "aarch64":
-			return []string{"linux-arm64-deb", "linux"}
+			return []string{"linux-aarch64-deb", "linux-arm64-deb", "linux"}
 		case "armv7", "armhf", "arm":
 			return []string{"linux-armhf-deb", "linux"}
 		default:
@@ -313,17 +313,17 @@ func candidateTargets(os, arch string) []string {
 		}
 	case "macos":
 		if arch == "arm64" || arch == "aarch64" {
-			return []string{"macos-arm64-dmg", "macos"}
+			return []string{"macos-arm64-dmg", "macos-universal-dmg", "macos"}
 		}
-		return []string{"macos-x86_64-dmg", "macos"}
+		return []string{"macos-x86_64-dmg", "macos-universal-dmg", "macos"}
 	case "android":
 		switch arch {
 		case "arm64", "aarch64", "arm64-v8a":
-			return []string{"android-arm64-v8a", "android-arm64", "android"}
+			return []string{"android-arm64", "android-arm64-v8a", "android-universal", "android"}
 		case "armv7", "armeabi-v7a", "arm":
-			return []string{"android-armeabi-v7a", "android-armeabi", "android-armv7", "android"}
+			return []string{"android-armv7", "android-armeabi-v7a", "android-armeabi", "android-universal", "android"}
 		case "x86_64", "amd64":
-			return []string{"android-x86_64", "android"}
+			return []string{"android-x86_64", "android-universal", "android"}
 		case "x86", "386", "i386":
 			return []string{"android-x86", "android"}
 		default:
