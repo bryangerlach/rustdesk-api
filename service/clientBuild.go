@@ -2,6 +2,10 @@ package service
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -106,6 +110,92 @@ var (
 	releaseVersionsCache  []string
 	releaseVersionsAt     time.Time
 )
+
+// Client build downloads are served through a short-lived signed URL so the
+// browser can stream the file directly instead of buffering it in JavaScript.
+// The ticket is scoped to one build id and file name.
+const clientBuildDownloadTokenTTL = 5 * time.Minute
+
+type clientBuildDownloadTicket struct {
+	Id   uint   `json:"id"`
+	File string `json:"file"`
+	Exp  int64  `json:"exp"`
+}
+
+var clientBuildDownloadFallbackKey = func() []byte {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return []byte("rustdesk-api-client-build-download")
+	}
+	return b
+}()
+
+func clientBuildDownloadKey() []byte {
+	if global.Config.Jwt.Key != "" {
+		return []byte(global.Config.Jwt.Key)
+	}
+	return clientBuildDownloadFallbackKey
+}
+
+// CreateClientBuildDownloadToken returns a signed ticket valid for one build
+// file. The token is intentionally short-lived; it only needs to survive long
+// enough for the browser to start the request.
+func CreateClientBuildDownloadToken(id uint, file string, ttl time.Duration) (string, error) {
+	file = strings.TrimSpace(file)
+	if id == 0 || file == "" || file == "." || file == ".." || filepath.Base(file) != file {
+		return "", fmt.Errorf("invalid download")
+	}
+	if ttl == 0 {
+		ttl = clientBuildDownloadTokenTTL
+	}
+	payload, err := json.Marshal(clientBuildDownloadTicket{
+		Id:   id,
+		File: file,
+		Exp:  time.Now().Add(ttl).Unix(),
+	})
+	if err != nil {
+		return "", err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	mac := hmac.New(sha256.New, clientBuildDownloadKey())
+	_, _ = mac.Write([]byte(encoded))
+	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return encoded + "." + signature, nil
+}
+
+// VerifyClientBuildDownloadToken validates a ticket and returns its build id
+// and file name.
+func VerifyClientBuildDownloadToken(token string) (uint, string, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return 0, "", fmt.Errorf("invalid download token")
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return 0, "", fmt.Errorf("invalid download token")
+	}
+	mac := hmac.New(sha256.New, clientBuildDownloadKey())
+	_, _ = mac.Write([]byte(parts[0]))
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return 0, "", fmt.Errorf("invalid download token")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return 0, "", fmt.Errorf("invalid download token")
+	}
+	var ticket clientBuildDownloadTicket
+	if err := json.Unmarshal(payload, &ticket); err != nil {
+		return 0, "", fmt.Errorf("invalid download token")
+	}
+	if time.Now().Unix() > ticket.Exp {
+		return 0, "", fmt.Errorf("download token expired")
+	}
+	if ticket.Id == 0 || ticket.File == "" || ticket.File == "." || ticket.File == ".." ||
+		filepath.Base(ticket.File) != ticket.File {
+		return 0, "", fmt.Errorf("invalid download token")
+	}
+	return ticket.Id, ticket.File, nil
+}
 
 type ClientBuildService struct{}
 

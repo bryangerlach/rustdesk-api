@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -321,6 +323,50 @@ func (ct *ClientBuild) BatchDelete(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+// DownloadTicket returns a short-lived direct download URL for a build file.
+// The browser can follow it without an api-token header, which lets the file
+// stream straight to disk instead of being buffered as a JavaScript Blob.
+// @Tags 客户端构建
+// @Summary 获取客户端文件下载链接
+// @Router /admin/client_build/download_ticket [post]
+func (ct *ClientBuild) DownloadTicket(c *gin.Context) {
+	f := &admin.ClientBuildDownloadForm{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	cb := cbSvc().InfoById(f.Id)
+	if cb.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
+	file := strings.TrimSpace(f.File)
+	if file == "" || filepath.Base(file) != file {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
+	allowed := false
+	for _, name := range cb.FileList {
+		if name == file {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
+	token, err := service.CreateClientBuildDownloadToken(cb.Id, file, 0)
+	if err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	response.Success(c, gin.H{
+		"url": fmt.Sprintf("/client_build/download/%d/%s?download_token=%s",
+			cb.Id, url.PathEscape(file), url.QueryEscape(token)),
+	})
+}
+
 // Download 下载已保存的客户端文件
 // @Tags 客户端构建
 // @Summary 下载客户端文件
@@ -328,6 +374,10 @@ func (ct *ClientBuild) BatchDelete(c *gin.Context) {
 func (ct *ClientBuild) Download(c *gin.Context) {
 	idStr := c.Param("id")
 	fileName := c.Param("file")
+	if fileName == "" || filepath.Base(fileName) != fileName {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
 	iid, err := strconv.Atoi(idStr)
 	if err != nil {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
@@ -342,6 +392,17 @@ func (ct *ClientBuild) Download(c *gin.Context) {
 		// try refresh
 		_ = cbSvc().RefreshStatus(cb)
 		cb = cbSvc().InfoById(cb.Id)
+	}
+	allowed := false
+	for _, name := range cb.FileList {
+		if name == fileName {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
 	}
 	localPath := filepath.Join(global.Config.Gin.ResourcesPath, "public", "upload", "client_build", strconv.Itoa(int(cb.Id)), fileName)
 	if _, err := os.Stat(localPath); err != nil {

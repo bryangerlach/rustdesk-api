@@ -16,3 +16,8 @@ type ClientBuildUpdateForm struct {
 	Id                uint `json:"id" form:"id"`
 	ExcludeFromUpdate bool `json:"exclude_from_update" form:"exclude_from_update"`
 }
+
+type ClientBuildDownloadForm struct {
+	Id   uint   `json:"id" form:"id"`
+	File string `json:"file" form:"file"`
+}

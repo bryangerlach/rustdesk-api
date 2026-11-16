@@ -25,6 +25,13 @@ func Init(g *gin.Engine) {
 
 	ConfigBind(adg)
 
+	// Build downloads use a short-lived signed URL so the browser can stream
+	// the file directly. This route is registered before BackendUserAuth and
+	// validates either the ticket or the normal api-token header.
+	adg.GET("/client_build/download/:id/:file",
+		middleware.ClientBuildDownloadAuth(),
+		(&admin.ClientBuild{}).Download)
+
 	adg.Use(middleware.BackendUserAuth())
 	//FileBind(adg)
 	UserBind(adg)
@@ -345,9 +352,9 @@ func ClientBuildBind(rg *gin.RouterGroup) {
 		aR.POST("/create", cont.Create)
 		aR.POST("/update", cont.Update)
 		aR.POST("/refresh_status", cont.RefreshStatus)
+		aR.POST("/download_ticket", cont.DownloadTicket)
 		aR.POST("/delete", cont.Delete)
 		aR.POST("/batchDelete", cont.BatchDelete)
-		aR.GET("/download/:id/:file", cont.Download)
 	}
 
 }
